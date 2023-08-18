@@ -1,5 +1,6 @@
 import pymatgen.core as pmg
 import math
+import numpy as np
 
 def generate_structure(cifFile:str) -> pmg.Structure:
     return pmg.Structure.from_file(cifFile)
@@ -19,7 +20,7 @@ def create_centred_grid(structure:pmg.Structure, enlargementSize:int, resolution
     startCoords = (lat.a*middle, lat.b*middle, lat.c*middle)
 
     #Define Grid List
-    grid = []
+    grid = ()
 
     #Iterate through 3D space to find all points for the grid
     x,y,z = startCoords
@@ -100,12 +101,12 @@ def export_grd(fileName, result, res, structure:pmg.Structure):
                 lnProgress = 0
 
 
-resolution = 20
-bvParams = {'Sn2+':(1.925, 0.37), 'Pb2+':(2.03, 0.37)}
-structure = generate_structure("cif-files/Ternary Fluorides/EntryWithCollCode152949 (PbSnF4).cif")
-structure.remove_species(["F-"])
-print(structure)
-eCell, grid = create_centred_grid(structure, 5, resolution)
-distanceList = find_distances_to_neigbours(eCell, grid, 6)
-result = calculate_bv(distanceList, bvParams)
-export_grd("PbSnF2.grd", result, resolution, structure)
+# resolution = 20
+# bvParams = {'Sn2+':(1.925, 0.37), 'Pb2+':(2.03, 0.37)}
+# structure = generate_structure("cif-files/Ternary Fluorides/EntryWithCollCode152949 (PbSnF4).cif")
+# structure.remove_species(["F-"])
+# print(structure)
+# eCell, grid = create_centred_grid(structure, 5, resolution)
+# distanceList = find_distances_to_neigbours(eCell, grid, 6)
+# result = calculate_bv(distanceList, bvParams)
+# export_grd("PbSnF2.grd", result, resolution, structure)

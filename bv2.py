@@ -7,7 +7,7 @@ import pandas as pd
 
 class BVStructure:
 
-    BV_PARMS = {'Sn2+1':(1.925, 2.702), 'Pb2+1':(2.03, 2.702)}
+    BV_PARAMS = {'Sn2+':(1.925, 2.702), 'Pb2+':(2.03, 2.702)}
 
     def __init__(self, structure:pmg.Structure, rCutoff:float):
         """
@@ -84,15 +84,16 @@ class BVStructure:
 
         return math.sqrt(deltaX**2 + deltaY**2 + deltaZ**2)
 
+
     def populateMap(self, ion:str):
         """
-            Main function that populates the map space with BVS values
+            Main function that populates the map space with BVS values. 
         """
 
         # Need to make this more general
         allAtoms = self.bufferCell.as_dataframe()
-        allAtoms["Species"] = allAtoms["Species"].map(lambda x: x.__str__())
-        selectedAtoms = allAtoms[allAtoms["Species"] != "F-1"]
+        allAtoms["Species"] = allAtoms["Species"].map(lambda x: x.__str__()[:-1])
+        selectedAtoms = allAtoms[allAtoms["Species"] != "F-"]
         
         # For every voxel
         for h in range(self.voxelNumbers[0]):
@@ -122,7 +123,7 @@ class BVStructure:
 
                         # Otherwise, calcualted the BV value and add it to the total
                         else:
-                            r0, ib = self.BV_PARMS[atom["Species"]]
+                            r0, ib = self.BV_PARAMS[atom["Species"]]
                             bv = calcBV(r0, ri, ib)
                             bvSum += bv
 
@@ -150,13 +151,6 @@ class BVStructure:
             file.write("%i %i %i\n" % tuple(self.voxelNumbers.tolist()))
 
             export.tofile(file,"  ")
-            # lnProgress = 0
-            # for value in sel.values():
-            #     file.write("    %.10e" % (value))
-            #     lnProgress += 1
-            #     if lnProgress == 6:
-            #         file.write("\n")
-            #         lnProgress = 0
 
 
 def generate_structure(cifFile:str) -> pmg.Structure:

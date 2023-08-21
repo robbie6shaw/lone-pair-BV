@@ -5,6 +5,9 @@ import re
 
 class BVDatabase:
 
+    ION_REGEX = re.compile("([A-Za-z]{,2})(\d*)(\+|-)")
+    RESULT_CONVERTER = lambda self, x: "1" if x == "" else x
+
     def __init__(self, dbLocation:str):
         """
             Initialise the connection to the database using its location.
@@ -78,7 +81,9 @@ class BVDatabase:
                 ion2 INTEGER,
                 r0 REAL,
                 b REAL,
-                ib REAL
+                ib REAL,
+                cn REAL,
+                r_cutoff REAL
             );
             ''')
         
@@ -127,9 +132,41 @@ class BVDatabase:
             ib = 1/b
             self.execute("INSERT INTO BVParam (ion1, ion2, r0, b, ib) VALUES (?,?,?,?,?)", (ion1Id, ion2Id, r0, b, ib))
 
-    def getParams(self, ion1, ion2):
-        "F-""Pb2+""O2-"
+        return self.lastRowId()
+    
+    def addInfo(self, paramId:int, cn:float, rCutoff:float):
 
+        self.execute("UPDATE BVParam SET cn = ?, r_cutoff = ? WHERE id = ?", (cn, rCutoff, paramId, ))
+
+    def interpretIon(self, ion):
+        """
+            Interprets an ion in string format. The ion must be of format Symbol-OS Digit-Sign, otherwise the interpretation will not work.
+
+            Returns a tuple of (element, oxidation_state)
+        """
+        result = self.ION_REGEX.search(ion)
+        if result is None:
+            raise Exception(f"Cannot interpret ion ({ion}) sucessfully.")
+        else:
+            return (result[1], int(result[3] + self.RESULT_CONVERTER(result[2])))
+    
+    def getParams(self, ion1:str, ion2:str):
+        """
+            Finds the parameters for a combination of two ions and returns them. The input ions should be in the format of Symbol-OS Digit-Sign.
+
+            Returns a tuple of (r0, ib)
+        """
+        ion1, ion2 = self.interpretIon(ion1), self.interpretIon(ion2)
+        self.execute("SELECT r0, ib FROM BVParam JOIN Ion i1 JOIN Ion i2 On BVParam.ion1 = i1.id AND BVParam.ion2 = i2.id WHERE i1.symbol = ? AND i1.os = ? AND i2.symbol = ? AND i2.os = ?", (ion1[0], ion1[1], ion2[0], ion2[1],))
+
+        result = self.fetchall()
+        if result is None or len(result) == 0:
+            raise Exception(f"The combination of ions ({ion1}, {ion2}) are not on the BV Parameters Database")
+        elif len(result) != 1:
+            logging.warn(f"Multiple different database entries for the same ions ({ion1}, {ion2})")
+        
+        return result[0]
+        
 
 
 
@@ -139,6 +176,14 @@ def readCif(fileLocation:str):
 def getDbCursor(dbLocation:str):
     conn = sqlite3.connect(dbLocation)
     return conn.cursor()
+
+def fileToDb(fileIn:str, fileOut:str):
+    if fileIn[-4:] == ".dat":
+        datToDb(fileIn, fileOut)
+    elif fileIn[-4:] == ".cif":
+        cifToDb(fileIn, fileOut) 
+    else:
+        print("Data format unrecognised - Can only read .cif and .dat files")
 
 def cifToDb(fileIn:str, fileOut:str):
     """
@@ -154,6 +199,34 @@ def cifToDb(fileIn:str, fileOut:str):
 
     db.close()
 
-# db = BVDatabase("bv-params.sqlite3")
-cifToDb("cif-files/bvparm2020.cif", "bv-params.sqlite3")
+def datToDb(fileIn:str, fileOut:str):
+    """
+        Convert the bond valence dat file from softBV into a local database format
+    """
+
+    db = BVDatabase(fileOut)
+    db.resetDatabase()
+
+    with open(fileIn, "r") as data:
+        entries = data.readlines()
+        
+        started = False
+        for entry in entries:
+            if started and entry == "DATA_END\n":
+                break
+            elif started:
+                row =  entry.split()
+                paramId = db.createEntry(row[0], int(row[1]), row[2], int(row[3]), float(row[4]), float(row[5]))
+                db.addInfo(paramId, float(row[6]), float(row[7]))
+            elif entry == "DATA_START\n":
+                started = True
+            else:
+                continue
+
+    db.close()
+
+
+# datToDb("cif-files/database_binary.dat", "soft-bv-params.sqlite3")
+# db = BVDatabase("soft-bv-params.sqlite3")
+# print(db.getParams("Pb2+","O2-"))
         

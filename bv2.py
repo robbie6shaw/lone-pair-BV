@@ -4,10 +4,11 @@ import pymatgen.core as pmg
 import math
 import numpy as np
 import pandas as pd
+import bvParameters
 
 class BVStructure:
 
-    BV_PARAMS = {'Sn2+':(1.925, 2.702), 'Pb2+':(2.03, 2.702)}
+    DB_LOCATION = "soft-bv-params.sqlite3"
 
     def __init__(self, structure:pmg.Structure, rCutoff:float):
         """
@@ -85,15 +86,33 @@ class BVStructure:
         return math.sqrt(deltaX**2 + deltaY**2 + deltaZ**2)
 
 
-    def populateMap(self, ion:str):
+    def populateMap(self, conductor:str):
         """
             Main function that populates the map space with BVS values. 
         """
 
         # Need to make this more general
+        # Creates dataframe from bufferCell
         allAtoms = self.bufferCell.as_dataframe()
-        allAtoms["Species"] = allAtoms["Species"].map(lambda x: x.__str__()[:-1])
-        selectedAtoms = allAtoms[allAtoms["Species"] != "F-"]
+
+        print(self.coreCell)
+        # Changes the composition row into a string representing the ion
+        allAtoms["Species"] = allAtoms["Species"].map(lambda x: x.__str__())
+        # Removes all conducting ions from the structure
+        selectedAtoms = allAtoms[allAtoms["Species"] != conductor]
+
+        print(self.coreCell)
+        print(allAtoms["Species"])
+        # Set up items to find bv parameters
+        bvParams = {}
+        db = bvParameters.BVDatabase(self.DB_LOCATION)
+        # For every ion that is not the conductor (currently assuming only one )
+        for fixedIon in allAtoms["Species"]:
+            if fixedIon == conductor:
+                continue
+            else:
+                bvParams[fixedIon] = db.getParams(conductor, fixedIon)
+
         
         # For every voxel
         for h in range(self.voxelNumbers[0]):
@@ -107,10 +126,10 @@ class BVStructure:
                     bvSum = 0.
 
                     # For each atom in the structure
-                    for i, atom in selectedAtoms.iterrows():
+                    for i, fixedIon in selectedAtoms.iterrows():
 
                         # Calculate the point to point distance between the voxel position and the atom position
-                        ri = self.calcDistanceWCutoff(pos, (atom["x"], atom["y"], atom["z"]))
+                        ri = self.calcDistanceWCutoff(pos, (fixedIon["x"], fixedIon["y"], fixedIon["z"]))
 
                         # If the seperation is less than 1 Å, set the BV value to very high value so the site is disregarded. This will cause the atom loop to be exited -> The site has a BV too high to be considered.
                         if ri < 1:
@@ -123,7 +142,7 @@ class BVStructure:
 
                         # Otherwise, calcualted the BV value and add it to the total
                         else:
-                            r0, ib = self.BV_PARAMS[atom["Species"]]
+                            r0, ib = self.BV_PARAMS[fixedIon["Species"]]
                             bv = calcBV(r0, ri, ib)
                             bvSum += bv
 
@@ -131,7 +150,7 @@ class BVStructure:
                     self.map[h][k][l] = bvSum
 
     def deltaBV(self, value:float, ion:str):
-        if ion == "F-":
+        if ion == "F-" or ion == "Na+":
             result = abs(value - 1)
             return result
 
@@ -243,7 +262,7 @@ def bvsCif (fileLocation:str):
             print(f"F- Site at ({site.x}, {site.y}, {site.z}): {findSiteBVS(site, structure)}")
 
 # bvsCif("cif-files/Binary Fluorides/ICSD_CollCode5270 (beta-PbF2).cif")
-pbsnf4 = BVStructure.from_file("cif-files/Ternary Fluorides/EntryWithCollCode152949 (PbSnF4).cif")
-pbsnf4.initaliseMap(0.1)
-pbsnf4.populateMap("F-")
+pbsnf4 = BVStructure.from_file("cif-files/1521543.cif")
+pbsnf4.initaliseMap(1)
+pbsnf4.populateMap("Na+")
 pbsnf4.exportMap("result.grd", "delta")

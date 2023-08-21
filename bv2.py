@@ -4,7 +4,7 @@ import pymatgen.core as pmg
 import math
 import numpy as np
 import pandas as pd
-import bvParameters
+import fileIO
 
 class BVStructure:
 
@@ -35,6 +35,8 @@ class BVStructure:
         # Define the resolution and the intial values of the buffer area (ensures full coordination sphere is calculated)
         self.resolution = resolution
         self.bufferArea = np.array((3,3,3))
+
+
 
         # If one unit cell is less than the cutoff radius, include another unit cell to the buffer area
         for i in range(3):
@@ -105,7 +107,7 @@ class BVStructure:
         print(allAtoms["Species"])
         # Set up items to find bv parameters
         bvParams = {}
-        db = bvParameters.BVDatabase(self.DB_LOCATION)
+        db = fileIO.BVDatabase(self.DB_LOCATION)
         # For every ion that is not the conductor (currently assuming only one )
         for fixedIon in allAtoms["Species"]:
             if fixedIon == conductor:

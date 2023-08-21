@@ -4,8 +4,32 @@ import logging
 import re
 import pymatgen.core as pmg
 
-class BVDatabase:
+## SHARED METHODS IN CORE CLASS
+class core:
 
+    ION_REGEX = re.compile("([A-Za-z]{,2})(\d*)(\+|-)")
+    RESULT_CONVERTER = lambda self, x: "1" if x == "" else x
+
+    def interpretIon(self, ion):
+            """
+                Interprets an ion in string format. The ion must be of format Symbol-OS Digit-Sign, otherwise the interpretation will not work.
+
+                Returns a tuple of (element, oxidation_state)
+            """
+            result = self.ION_REGEX.search(ion)
+            if result is None:
+                raise Exception(f"Cannot interpret ion ({ion}) sucessfully.")
+            else:
+                return (result[1], int(result[3] + self.RESULT_CONVERTER(result[2])))
+
+## DATABASE CLASS
+
+class BVDatabase:
+    """
+        A class representing a connection to a bond valence parameter database. Contains all methods required to communitate with the database.
+    """
+
+    CORE = core()
     ION_REGEX = re.compile("([A-Za-z]{,2})(\d*)(\+|-)")
     RESULT_CONVERTER = lambda self, x: "1" if x == "" else x
 
@@ -153,17 +177,6 @@ class BVDatabase:
 
         self.execute("UPDATE BVParam SET cn = ?, r_cutoff = ? WHERE id = ?", (cn, rCutoff, paramId, ))
 
-    def interpretIon(self, ion):
-        """
-            Interprets an ion in string format. The ion must be of format Symbol-OS Digit-Sign, otherwise the interpretation will not work.
-
-            Returns a tuple of (element, oxidation_state)
-        """
-        result = self.ION_REGEX.search(ion)
-        if result is None:
-            raise Exception(f"Cannot interpret ion ({ion}) sucessfully.")
-        else:
-            return (result[1], int(result[3] + self.RESULT_CONVERTER(result[2])))
     
     def getParams(self, ion1:str, ion2:str):
         """
@@ -171,7 +184,7 @@ class BVDatabase:
 
             Returns a tuple of (r0, ib)
         """
-        ion1, ion2 = self.interpretIon(ion1), self.interpretIon(ion2)
+        ion1, ion2 = self.CORE.interpretIon(ion1), self.CORE.interpretIon(ion2)
         self.execute("SELECT r0, ib FROM BVParam JOIN Ion i1 JOIN Ion i2 On BVParam.ion1 = i1.id AND BVParam.ion2 = i2.id WHERE i1.symbol = ? AND i1.os = ? AND i2.symbol = ? AND i2.os = ?", (ion1[0], ion1[1], ion2[0], ion2[1],))
 
         result = self.fetchall()
@@ -237,9 +250,44 @@ def datToDb(fileIn:str, fileOut:str):
 
     db.close()
 
+def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
+    
+    CORE = core()
+
+    # Create a pymatgen object
+    struct = pmg.Structure.from_file(fileIn)
+    conductorSymb, conductorOS = CORE.interpretIon(conductor)
+
+    # Open output file
+    with open(fileOut, "w") as f:
+
+        # Give information on conductor choice and the lattice
+        f.write(f"{conductorSymb}\t{conductorOS}\n")
+        f.write(f"{struct.lattice.a}\t{struct.lattice.b}\t{struct.lattice.c}\t{struct.lattice.alpha}\t{struct.lattice.beta}\t{struct.lattice.gamma}\n")
+        f.write(f"{struct.lattice.volume}\t{struct.lattice.matrix[0]}\t{struct.lattice.matrix[1]}\t{struct.lattice.matrix[2]}\n\n")
+
+        # For every site, add label, element, os and cartesian coords
+        for site in struct.sites:
+
+            f.write(site.label + "\t")
+
+            if isinstance(site.species, pmg.Composition):
+                elements = site.species.elements
+                if len(elements) != 1:
+                    f.write("##DISORDED SITE - AMEND MANUALLY##\t")
+                else:
+                    f.write(f"{elements[0].element}\t{elements[0].oxi_state}\t")
+            
+            elif isinstance(site.species, pmg.Species):
+                f.write(f"{site.species.symbol}\t{site.species.oxidation_state}\t")
+            else:
+                f.write("##DISORDED SITE - AMEND MANUALLY##\t")
+            
+            f.write(f"{site.coords[0]}\t{site.coords[1]}\t{site.coords[2]}\n")
+
 
     
-
+createInputFromCif("cif-files/Ternary Fluorides/EntryWithCollCode152949 (PbSnF4).cif", "pbsnf4.inp", "F-")
 
 # datToDb("cif-files/database_binary.dat", "soft-bv-params.sqlite3")
 # db = BVDatabase("soft-bv-params.sqlite3")

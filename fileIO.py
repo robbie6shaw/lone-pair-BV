@@ -3,6 +3,7 @@ import sqlite3
 import logging
 import re
 import pymatgen.core as pmg
+import numpy as np
 
 ## SHARED METHODS IN CORE CLASS
 class core:
@@ -264,7 +265,11 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
         # Give information on conductor choice and the lattice
         f.write(f"{conductorSymb}\t{conductorOS}\n")
         f.write(f"{struct.lattice.a}\t{struct.lattice.b}\t{struct.lattice.c}\t{struct.lattice.alpha}\t{struct.lattice.beta}\t{struct.lattice.gamma}\n")
-        f.write(f"{struct.lattice.volume}\t{struct.lattice.matrix[0]}\t{struct.lattice.matrix[1]}\t{struct.lattice.matrix[2]}\n\n")
+        f.write(f"{struct.lattice.volume}\n")
+        for i in range(3):
+            for j in range (3):
+                f.write(f"{struct.lattice.matrix[i][j]}\t")
+            f.write("\n")
 
         # For every site, add label, element, os and cartesian coords
         for site in struct.sites:
@@ -274,14 +279,14 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
             if isinstance(site.species, pmg.Composition):
                 elements = site.species.elements
                 if len(elements) != 1:
-                    f.write("##DISORDED SITE - AMEND MANUALLY##\t")
+                    f.write("##DISORDERED SITE - AMEND MANUALLY##\t")
                 else:
                     f.write(f"{elements[0].element}\t{elements[0].oxi_state}\t")
             
             elif isinstance(site.species, pmg.Species):
                 f.write(f"{site.species.symbol}\t{site.species.oxidation_state}\t")
             else:
-                f.write("##DISORDED SITE - AMEND MANUALLY##\t")
+                f.write("##DISORDERED SITE - AMEND MANUALLY##\t")
             
             f.write(f"{site.coords[0]}\t{site.coords[1]}\t{site.coords[2]}\n")
 

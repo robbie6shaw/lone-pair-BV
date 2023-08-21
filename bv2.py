@@ -10,21 +10,37 @@ class BVStructure:
 
     DB_LOCATION = "soft-bv-params.sqlite3"
 
-    def __init__(self, structure:pmg.Structure, rCutoff:float):
+    def __init__(self, inputStr:str):
         """
-            Initialises a BVStructure object using a pymatgen structure and a cutoff radius for BVS calculations.
+            Initialises a BVStructure object using an input string.
         """
         
-        # Set core variables
-        self.coreCell = structure
-        self.rCutoff = rCutoff
+        lines = inputStr.splitlines()
 
 
-    def from_file(fileName:str, Rcutoff:int = 6):
+        self.conductor = tuple(lines[0].split("\t"))
+        self.params = tuple(lines[1].split("\t"))
+        extraP = lines[2].split("\t")
+        self.volume = extraP[0]
+        self.vectors = np.zeros((3,3))
+        for i in range(3,6):
+            cols = lines[i].split("\t")
+            for j in range(3):
+                self.vectors[i-3][j] = cols[j]
+
+        sites = []
+        for i in range(7, len(lines)):
+            data = lines[i].split("\t")
+            sites.append({"label": data[0], "element": data[1], "ox_state": data[2], "a": data[3], "b": data[4], "c": data[5]})
+
+        self.sites = pd.DataFrame(sites)
+
+    def from_file(fileName:str):
         """
-            Initialises a BVStructure object from a cif file and a cutoff radius for BVS calculations
+            Initialises a BVStructure object from an input file
         """
-        return BVStructure(pmg.Structure.from_file(fileName), Rcutoff)
+        with open(fileName, "r") as f:
+            return BVStructure(f.read())
     
     def initaliseMap(self, resolution:int):
         """
@@ -264,7 +280,8 @@ def bvsCif (fileLocation:str):
             print(f"F- Site at ({site.x}, {site.y}, {site.z}): {findSiteBVS(site, structure)}")
 
 # bvsCif("cif-files/Binary Fluorides/ICSD_CollCode5270 (beta-PbF2).cif")
-pbsnf4 = BVStructure.from_file("cif-files/1521543.cif")
-pbsnf4.initaliseMap(1)
-pbsnf4.populateMap("Na+")
-pbsnf4.exportMap("result.grd", "delta")
+pbsnf4 = BVStructure.from_file("pbsnf4.inp")
+print(pbsnf4.sites)
+# pbsnf4.initaliseMap(1)
+# pbsnf4.populateMap("Na+")
+# pbsnf4.exportMap("result.grd", "delta")

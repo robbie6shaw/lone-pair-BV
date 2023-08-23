@@ -263,6 +263,11 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
     struct = pmg.Structure.from_file(fileIn)
     conductorSymb, conductorOS = CORE.interpretIon(conductor)
 
+    if fileIn[-4:] != ".cif":
+        logging.error(f"Incorrect file format. The input file should be a cif file and not a {fileIn[-3:]} file")
+    elif fileOut[-4:] != ".inp":
+        logging.error(f"Incorrect file format. The output file should be a inp file and not a {fileIn[-3:]} file")
+
     # Open output file
     with open(fileOut, "w") as f:
 
@@ -275,17 +280,25 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
                 f.write(f"{struct.lattice.matrix[i][j]}\t")
             f.write("\n")
 
+        osWarning = False
+
         # For every site, add label, element, os and cartesian coords
         for site in struct.sites:
 
             f.write(site.label + "\t")
 
             if isinstance(site.species, pmg.Composition):
+                
                 elements = site.species.elements
                 if len(elements) != 1:
                     f.write("##DISORDERED SITE - AMEND MANUALLY##\t")
-                else:
+                elif isinstance(elements[0], pmg.Element):
+                    f.write(f"{elements[0].name}\t{elements[0].max_oxidation_state}\t")
+                    osWarning = True
+                elif isinstance(elements[0], pmg.Species):
                     f.write(f"{elements[0].element}\t{elements[0].oxi_state}\t")
+                else:
+                    raise Exception("Unexpected Site Contents")
             
             elif isinstance(site.species, pmg.Species):
                 f.write(f"{site.species.symbol}\t{site.species.oxidation_state}\t")
@@ -294,10 +307,13 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
             
             f.write(f"{site.coords[0]}\t{site.coords[1]}\t{site.coords[2]}\n")
 
+        if osWarning:
+            logging.warning("Oxidation States have been set to maximum (due to limitations with pymatgen). Amend input file with correct os")
+
 
     
-createInputFromCif("cif-files/Binary Fluorides/ICSD_CollCode5270 (beta-PbF2).cif", "betaPbF2.inp", "F-")
-
+# createInputFromCif("cif-files/1521543.cif", "files/na-abs.inp", "Na+")
+# createInputFromCif("cif-files/Binary Fluorides/ICSD_CollCode5270 (beta-PbF2).cif", "files/na-abs.inp", "F-")
 # datToDb("cif-files/database_binary.dat", "soft-bv-params.sqlite3")
 # db = BVDatabase("soft-bv-params.sqlite3")
 # print(db.getParams("Pb2+","O2-"))

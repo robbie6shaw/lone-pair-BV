@@ -1,7 +1,7 @@
 from typing import Sequence
 from numpy.typing import ArrayLike
 import pymatgen.core as pmg
-import math, logging
+import math, logging, sys
 import numpy as np
 import pandas as pd
 import fileIO
@@ -42,8 +42,15 @@ class BVStructure:
         """
             Initialises a BVStructure object from an input file
         """
+
+        if fileName[-4:] != ".inp":
+            logging.error(f"Incorrect file format. The input file should be an inp file and not a {fileName[-3:]} file")
+            sys.exit()
+    
         with open(fileName, "r") as f:
-            return BVStructure(f.read())
+            contents = f.read()
+            if len(contents) > 5: return BVStructure(contents)     
+            else: raise Exception("Empty input file")
 
     # --TESTED--   
     def translateCoord(self, coord:np.ndarray, shift:tuple) -> np.ndarray:
@@ -70,8 +77,9 @@ class BVStructure:
 
         db = fileIO.BVDatabase(self.DB_LOCATION)
         # For every ion that is not the conductor (currently assuming only one )
-        for i, fixedIon in self.sites.drop_duplicates(subset=["element","ox_state"]).iterrows():
-            if fixedIon["element"] == self.conductor[0]:
+        # for i, fixedIon in self.sites.drop_duplicates(subset=["element","ox_state"]).iterrows():
+        for i, fixedIon in self.sites.drop_duplicates(subset=["label"]).iterrows():
+            if fixedIon["ox_state"] * self.conductor[1] > 0:
                 continue
             else:
                 self.bvParams[fixedIon["label"]] = db.getParams(self.conductor, (fixedIon["element"], fixedIon["ox_state"]))
@@ -168,6 +176,9 @@ class BVStructure:
         if deltaZ > self.rCutoff:  return deltaZ
 
         return math.sqrt(deltaX**2 + deltaY**2 + deltaZ**2)
+    
+    def sign(num):
+        return -1 if num < 0 else 1
 
     def initaliseMap(self, resolution:int):
         """
@@ -190,7 +201,9 @@ class BVStructure:
         """
 
         # Removes all conducting ions from the structure
-        selectedAtoms = self.bufferedSites[self.bufferedSites["element"] != self.conductor[0]]
+        # selectedAtoms = self.bufferedSites[self.bufferedSites["element"] != self.conductor[0]]
+        selectedAtoms = self.bufferedSites[self.bufferedSites["ox_state"] * self.conductor[1] < 0]
+        print(selectedAtoms)
 
         # For every voxel
         for h in range(self.voxelNumbers[0]):

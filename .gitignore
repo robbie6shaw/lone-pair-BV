@@ -1,1 +1,7 @@
 PbSnF2.grd
+__pycache__/*
+.ipynb_checkpoints/*
+.pytest_cache/*
+test/__pycache__/*
+*.grd
+logs/*

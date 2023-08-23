@@ -179,14 +179,18 @@ class BVDatabase:
         self.execute("UPDATE BVParam SET cn = ?, r_cutoff = ? WHERE id = ?", (cn, rCutoff, paramId, ))
 
     
-    def getParams(self, ion1:str, ion2:str):
+    def getParams(self, ion1:str|tuple, ion2:str|tuple):
         """
             Finds the parameters for a combination of two ions and returns them. The input ions should be in the format of Symbol-OS Digit-Sign.
 
             Returns a tuple of (r0, ib)
         """
-        ion1, ion2 = self.CORE.interpretIon(ion1), self.CORE.interpretIon(ion2)
-        self.execute("SELECT r0, ib FROM BVParam JOIN Ion i1 JOIN Ion i2 On BVParam.ion1 = i1.id AND BVParam.ion2 = i2.id WHERE i1.symbol = ? AND i1.os = ? AND i2.symbol = ? AND i2.os = ?", (ion1[0], ion1[1], ion2[0], ion2[1],))
+        if isinstance(ion1, str):
+            ion1 = self.CORE.interpretIon(ion1)
+        if isinstance(ion2, str):
+            ion2 = self.CORE.interpretIon(ion2)
+
+        self.execute("SELECT r0, ib, cn, r_cutoff FROM BVParam JOIN Ion i1 JOIN Ion i2 On BVParam.ion1 = i1.id AND BVParam.ion2 = i2.id WHERE (i1.symbol = ? AND i1.os = ? AND i2.symbol = ? AND i2.os = ?) OR (i2.symbol = ? AND i2.os = ? AND i1.symbol = ? AND i1.os = ?)", (ion1[0], ion1[1], ion2[0], ion2[1], ion1[0], ion1[1], ion2[0], ion2[1],))
 
         result = self.fetchall()
         if result is None or len(result) == 0:
@@ -292,7 +296,7 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
 
 
     
-createInputFromCif("cif-files/Ternary Fluorides/EntryWithCollCode152949 (PbSnF4).cif", "pbsnf4.inp", "F-")
+createInputFromCif("cif-files/Binary Fluorides/ICSD_CollCode5270 (beta-PbF2).cif", "betaPbF2.inp", "F-")
 
 # datToDb("cif-files/database_binary.dat", "soft-bv-params.sqlite3")
 # db = BVDatabase("soft-bv-params.sqlite3")

@@ -5,3 +5,5 @@ __pycache__/*
 test/__pycache__/*
 *.grd
 logs/*
+*.inp
+files/*

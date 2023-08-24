@@ -27,11 +27,15 @@ if __name__ == '__main__' and len(sys.argv) > 1:
         logging.StreamHandler()
     ])
 
+    start_time = datetime.now()
+
     if len(sys.argv) > 2:
         print(sys.argv)
         globals()[sys.argv[1]](sys.argv[2:])
     else:
         globals()[sys.argv[1]]()
+
+    logging.info(f"Program Complete - Time Taken: {(datetime.now() - start_time)}")
 
 else:
     bvs(["files/na-abs.inp", "files/na-abs-out.grd", 0.25])

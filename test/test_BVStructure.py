@@ -47,9 +47,9 @@ class TestSimpleBVStructure(alteredTestCase):
         self.assertAlmostEqual(self.obj.sites["coords"][1][1], 2.9653)
 
     def test_get_bv_params(self):
-        self.assertIsInstance(self.obj.bvParams, dict)
-        self.assertEqual(len(self.obj.bvParams), 1)
-        self.assertEqual(self.obj.bvParams["Pb1"][0], 1.90916)
+        self.assertIsInstance(self.obj.allBvParams, dict)
+        self.assertEqual(len(self.obj.allBvParams), 1)
+        self.assertEqual(self.obj.allBvParams["Pb1"][0], 1.90916)
         self.assertAlmostEqual(self.obj.rCutoff, 6)
 
     def test_buffer_area(self):
@@ -163,4 +163,32 @@ class TestBVStructureInternalMethods(alteredTestCase):
         self.assertAlmostEqual(self.obj.calcDistanceWCutoff(np.array((3,4,1)), np.array((-10,0,-2))), 13)
 
 
+class TestVectorBVS(alteredTestCase):
 
+    def setUp(self):
+        self.obj = bv2.BVStructure.from_file("test/pbsnf4-for-testing.inp")
+
+    def test_distance_w_cutoff_vector(self):
+
+        self.obj.rCutoff = 6
+
+        # Check very simple calculation
+        self.assertAlmostEqual(self.obj.calcDistanceWCV(np.array((1,1,1)) - np.array((0,0,0))), math.sqrt(3))
+        
+        # Check completely normal conditions
+        self.assertAlmostEqual(self.obj.calcDistanceWCV(np.array((3,4,1)) - np.array((-1,0,-2))), math.sqrt(41))
+        
+        # Check behaviour when very near cutoff
+        self.assertAlmostEqual(self.obj.calcDistanceWCV(np.array((3,4,1)) - np.array((-3,0,-2))), math.sqrt(61))
+
+        # Check behaviour when beyond cutoff
+        self.assertAlmostEqual(self.obj.calcDistanceWCV(np.array((3,4,1)) - np.array((-10,0,-2))), 13) 
+
+    def test_find_site_vbvs(self):
+
+        self.obj.initaliseMap(1)
+
+        snResult = self.obj.findSiteVBVS("Sn1")
+        logging.info(f"Sn VBVS Result - {snResult}")
+        self.assertAlmostEqual(snResult[0], 0)
+        self.assertTrue(1.12 < snResult < 1.13)

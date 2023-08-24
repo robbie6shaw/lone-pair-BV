@@ -194,7 +194,7 @@ class BVDatabase:
         if isinstance(ion2, str):
             ion2 = self.CORE.interpretIon(ion2)
 
-        self.execute("SELECT r0, ib, cn, r_cutoff FROM BVParam JOIN Ion i1 JOIN Ion i2 On BVParam.ion1 = i1.id AND BVParam.ion2 = i2.id WHERE (i1.symbol = ? AND i1.os = ? AND i2.symbol = ? AND i2.os = ?) OR (i2.symbol = ? AND i2.os = ? AND i1.symbol = ? AND i1.os = ?)", (ion1[0], ion1[1], ion2[0], ion2[1], ion1[0], ion1[1], ion2[0], ion2[1],))
+        self.execute("SELECT r0, ib, cn, r_cutoff FROM BVParam JOIN Ion i1 JOIN Ion i2 On BVParam.ion1 = i1.id AND BVParam.ion2 = i2.id WHERE (i1.symbol = ? AND i1.os = ? AND i2.symbol = ? AND i2.os = ?) OR (i2.symbol = ? AND i2.os = ? AND i1.symbol = ? AND i1.os = ?)", (ion1[0], int(ion1[1]), ion2[0], int(ion2[1]), ion1[0], int(ion1[1]), ion2[0], int(ion2[1]),))
 
         result = self.fetchall()
         if result is None or len(result) == 0:
@@ -284,15 +284,19 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
                 f.write(f"{struct.lattice.matrix[i][j]}\t")
             f.write("\n")
 
-        f.write("label\telement\tos\tlp\ta\tb\tc\n")
-
+        f.write("sym_label\tp1_label\telement\tos\tlp\ta\tb\tc\n")
+        siteDict = {}
         osWarning = False
+
+        # Highly inefficient, highly simple
+        for site in struct.sites:
+            siteDict[site.label] = 0
 
         # For every site, add label, element, os and cartesian coords
         for site in struct.sites:
-
-            f.write(site.label + "\t")
-
+            helpMe = siteDict[site.label]
+            f.write(f"{site.label}\t{site.label}.{helpMe}")
+            siteDict[site.label] += 1
             if isinstance(site.species, pmg.Composition):
                 
                 elements = site.species.elements

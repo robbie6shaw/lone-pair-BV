@@ -10,6 +10,7 @@ class core:
 
     ION_REGEX = re.compile("([A-Za-z]{,2})(\d*)(\+|-)")
     RESULT_CONVERTER = lambda self, x: "1" if x == "" else x
+    LONE_PAIR_ELEMENTS = ["Pb", "Sn", "Bi", "Sb", "Tl"]
 
     def interpretIon(self, ion):
             """
@@ -22,6 +23,11 @@ class core:
                 raise Exception(f"Cannot interpret ion ({ion}) sucessfully.")
             else:
                 return (result[1], int(result[3] + self.RESULT_CONVERTER(result[2])))
+            
+    def hasLonePair(self, element:str):
+
+        return element in self.LONE_PAIR_ELEMENTS
+            
 
 ## DATABASE CLASS
 
@@ -31,8 +37,6 @@ class BVDatabase:
     """
 
     CORE = core()
-    ION_REGEX = re.compile("([A-Za-z]{,2})(\d*)(\+|-)")
-    RESULT_CONVERTER = lambda self, x: "1" if x == "" else x
 
     def __init__(self, dbLocation:str):
         """
@@ -280,6 +284,8 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
                 f.write(f"{struct.lattice.matrix[i][j]}\t")
             f.write("\n")
 
+        f.write("label\telement\tos\tlp\ta\tb\tc\n")
+
         osWarning = False
 
         # For every site, add label, element, os and cartesian coords
@@ -293,15 +299,15 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
                 if len(elements) != 1:
                     f.write("##DISORDERED SITE - AMEND MANUALLY##\t")
                 elif isinstance(elements[0], pmg.Element):
-                    f.write(f"{elements[0].name}\t{elements[0].max_oxidation_state}\t")
+                    f.write(f"{elements[0].name}\t{elements[0].max_oxidation_state}\t{elements[0].name in CORE.LONE_PAIR_ELEMENTS}\t")
                     osWarning = True
                 elif isinstance(elements[0], pmg.Species):
-                    f.write(f"{elements[0].element}\t{elements[0].oxi_state}\t")
+                    f.write(f"{elements[0].element}\t{elements[0].oxi_state}\t{elements[0].element.name in CORE.LONE_PAIR_ELEMENTS}\t")
                 else:
                     raise Exception("Unexpected Site Contents")
             
             elif isinstance(site.species, pmg.Species):
-                f.write(f"{site.species.symbol}\t{site.species.oxidation_state}\t")
+                f.write(f"{site.species.symbol}\t{site.species.oxidation_state}\t{site.species.symbol in CORE.LONE_PAIR_ELEMENTS}\t")
             else:
                 f.write("##DISORDERED SITE - AMEND MANUALLY##\t")
             

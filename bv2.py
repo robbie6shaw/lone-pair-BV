@@ -30,9 +30,9 @@ class BVStructure:
                 self.vectors[i-3][j] = float(cols[j])
 
         sites = []
-        for i in range(6, len(lines)):
+        for i in range(7, len(lines)):
             data = lines[i].split("\t")
-            sites.append({"label": data[0], "element": data[1], "ox_state": round(float(data[2])), "coords": np.array((float(data[3]), float(data[4]) ,float(data[5])))})
+            sites.append({"label": data[0], "element": data[1], "ox_state": round(float(data[2])), "lp": bool(data[3]), "coords": np.array((float(data[4]), float(data[5]), float(data[6])))})
 
         self.sites = pd.DataFrame(sites)
         self.getBVParams()
@@ -116,7 +116,7 @@ class BVStructure:
         """
 
         # Create a copy of the sites dataframe to add to
-        self.bufferedSites = pd.DataFrame(columns=["label","element","ox_state","coords"])
+        self.bufferedSites = pd.DataFrame(columns=["label","element","ox_state","lp","coords"])
 
         # For every cell in the determine buffer area
         for h in range(self.bufferArea[0]):
@@ -134,7 +134,7 @@ class BVStructure:
                         
                         # If the site is outwith the required area, disregard it
                         if self.insideSpace(self.reqVolStart, self.reqVolEnd, newCoord):
-                            self.bufferedSites.loc[len(self.bufferedSites)] = [site["label"], site["element"], site["ox_state"], newCoord]
+                            self.bufferedSites.loc[len(self.bufferedSites)] = [site["label"], site["element"], site["ox_state"], site["lp"], newCoord]
 
     def setUpVoxels(self):
         """
@@ -263,6 +263,10 @@ class BVStructure:
             file.write("%i %i %i\n" % tuple(self.voxelNumbers.tolist()))
 
             export.tofile(file,"  ")
+
+    def createLonePairs(self, distance:int = 1):
+        pass
+
 
 
 def generate_structure(cifFile:str) -> pmg.Structure:

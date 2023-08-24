@@ -23,7 +23,8 @@ def bvs(args:list):
 # Code Allows Command Line Running of Functions https://stackoverflow.com/a/52837375
 if __name__ == '__main__' and len(sys.argv) > 1:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s -  %(levelname)s -  %(message)s', handlers=[
-        logging.FileHandler(f"./logs/{datetime.now().isoformat(timespec='seconds')}.log"),
+        # logging.FileHandler(f"./logs/{datetime.now().isoformat(timespec='seconds')}.log"),
+        logging.FileHandler("logs/bvs.log"),
         logging.StreamHandler()
     ])
 

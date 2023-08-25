@@ -294,7 +294,7 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
 
         # For every site, add label, element, os and cartesian coords
         for site in struct.sites:
-            f.write(f"{site.label}\t{site.label}-{siteDict[site.label]}\t")
+            f.write(f"{site.label}\t{site.label}.{siteDict[site.label]}\t")
             siteDict[site.label] += 1
             if isinstance(site.species, pmg.Composition):
                 
@@ -302,15 +302,15 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
                 if len(elements) != 1:
                     f.write("##DISORDERED SITE - AMEND MANUALLY##\t")
                 elif isinstance(elements[0], pmg.Element):
-                    f.write(f"{elements[0].name}\t{elements[0].max_oxidation_state}\t{elements[0].name in CORE.LONE_PAIR_ELEMENTS}\t")
+                    f.write(f"{elements[0].name}\t{elements[0].max_oxidation_state}\t{int(elements[0].name in CORE.LONE_PAIR_ELEMENTS)}\t")
                     osWarning = True
                 elif isinstance(elements[0], pmg.Species):
-                    f.write(f"{elements[0].element}\t{elements[0].oxi_state}\t{elements[0].element.name in CORE.LONE_PAIR_ELEMENTS}\t")
+                    f.write(f"{elements[0].element}\t{elements[0].oxi_state}\t{int(elements[0].element.name in CORE.LONE_PAIR_ELEMENTS)}\t")
                 else:
                     raise Exception("Unexpected Site Contents")
             
             elif isinstance(site.species, pmg.Species):
-                f.write(f"{site.species.symbol}\t{site.species.oxidation_state}\t{site.species.symbol in CORE.LONE_PAIR_ELEMENTS}\t")
+                f.write(f"{site.species.symbol}\t{site.species.oxidation_state}\t{int(site.species.symbol in CORE.LONE_PAIR_ELEMENTS)}\t")
             else:
                 f.write("##DISORDERED SITE - AMEND MANUALLY##\t")
             

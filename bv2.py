@@ -128,10 +128,11 @@ class BVStructure:
         self.bufferedSites = pd.DataFrame(columns=["label","p1_label","element","ox_state","lp","coords"])
 
         # For every cell in the determine buffer area
-        # Range if buffer area is 3, creates area from -1 -> 1; if 5, -2 -> 2
-        for h in range(- math.floor(self.bufferArea[0]/2), math.floor(self.bufferArea[0]/2)):
-            for k in range(- math.floor(self.bufferArea[1]/2), math.floor(self.bufferArea[1]/2)):
-                for l in range(- math.floor(self.bufferArea[2]/2), math.floor(self.bufferArea[2]/2)):
+        # Range if buffer area is 3, creates area from -1 -> 1; if 5, -2 -> 2 
+        # Note - range function does not include last number ∴ must have ceiling function for upper limit
+        for h in range(- math.floor(self.bufferArea[0]/2), math.ceil(self.bufferArea[0]/2)):
+            for k in range(- math.floor(self.bufferArea[1]/2), math.ceil(self.bufferArea[1]/2)):
+                for l in range(- math.floor(self.bufferArea[2]/2), math.ceil(self.bufferArea[2]/2)):
                     
                     # Skip if the cell is already there
                     # if h == 0 and k == 0 and l == 0: continue

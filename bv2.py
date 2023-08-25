@@ -34,7 +34,7 @@ class BVStructure:
         sites = []
         for i in range(7, len(lines)):
             data = lines[i].split("\t")
-            sites.append({"label": data[0], "element": data[1], "ox_state": round(float(data[2])), "lp": bool(data[3]), "coords": np.array((float(data[4]), float(data[5]), float(data[6])))})
+            sites.append({"label": data[0], "p1_label":data[1], "element": data[2], "ox_state": round(float(data[3])), "lp": bool(data[4]), "coords": np.array((float(data[5]), float(data[6]), float(data[7])))})
 
         self.sites = pd.DataFrame(sites)
 
@@ -112,7 +112,8 @@ class BVStructure:
         # Find the cartesian coordinates of the 'core' cell - the one that map will be based on
         # To do this, it find the core cell coordinates in terms of cells and then multiplies the cell vectors
         self.findCoreCell = np.vectorize(lambda x: math.floor(x/2))
-        self.coreCartesian = np.sum(self.findCoreCell(self.bufferArea) * self.vectors, axis=0)
+        # self.coreCartesian = np.sum(self.findCoreCell(self.bufferArea) * self.vectors, axis=0)
+        self.coreCartesian = np.zeros(3)
 
         # Find the actual volume made by the cutoff radius and the core cell, allowing any other sites to be disregarded
         self.reqVolStart = self.coreCartesian - np.array((self.rCutoff,self.rCutoff,self.rCutoff))
@@ -124,15 +125,16 @@ class BVStructure:
         """
 
         # Create a copy of the sites dataframe to add to
-        self.bufferedSites = pd.DataFrame(columns=["label","element","ox_state","lp","coords"])
+        self.bufferedSites = pd.DataFrame(columns=["label","p1_label","element","ox_state","lp","coords"])
 
         # For every cell in the determine buffer area
-        for h in range(self.bufferArea[0]):
-            for k in range(self.bufferArea[1]):
-                for l in range(self.bufferArea[2]):
+        # Range if buffer area is 3, creates area from -1 -> 1; if 5, -2 -> 2
+        for h in range(- math.floor(self.bufferArea[0]/2), math.floor(self.bufferArea[0]/2)):
+            for k in range(- math.floor(self.bufferArea[1]/2), math.floor(self.bufferArea[1]/2)):
+                for l in range(- math.floor(self.bufferArea[2]/2), math.floor(self.bufferArea[2]/2)):
                     
                     # Skip if the cell is already there
-                    if h == 0 and k == 0 and l == 0: continue
+                    # if h == 0 and k == 0 and l == 0: continue
 
                     # For every site in the core cell
                     for i, site in self.sites.iterrows():
@@ -142,7 +144,7 @@ class BVStructure:
                         
                         # If the site is outwith the required area, disregard it
                         if self.insideSpace(self.reqVolStart, self.reqVolEnd, newCoord):
-                            self.bufferedSites.loc[len(self.bufferedSites)] = [site["label"], site["element"], site["ox_state"], site["lp"], newCoord]
+                            self.bufferedSites.loc[len(self.bufferedSites)] = [site["label"], site["p1_label"], site["element"], site["ox_state"], site["lp"], newCoord]
 
     def setUpVoxels(self):
         """
@@ -212,6 +214,7 @@ class BVStructure:
         self.setUpVoxels()
         
         logging.info("Successful initalisation of the map")
+        logging.debug(self.bufferedSites)
 
     def populateMap(self):
         """
@@ -324,7 +327,9 @@ class BVStructure:
 
     def createLonePairs(self, distance:int = 1):
         
-        pass 
+        for i, site in self.bufferedSites[self.bufferedSites["lp"]].iterrows():
+            vbvs = findSiteBVS(self.bufferedSites["CHANGE"])    
+         
         # for i, site in self.sites.iterrows():
         #     if site["lp"]:
 

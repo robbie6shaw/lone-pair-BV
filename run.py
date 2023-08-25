@@ -39,8 +39,14 @@ if __name__ == '__main__' and len(sys.argv) > 1:
     logging.info(f"Program Complete - Time Taken: {(datetime.now() - start_time)}")
 
 else:
-    # bvs(["files/na-abs.inp", "files/na-abs-out.grd", 0.25])
-    create_input(["cif-files/ternary-fluorides/EntryWithCollCode152949 (PbSnF4).cif", "files/pbsnf4.inp", "F-"])
+
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s -  %(levelname)s -  %(message)s', handlers=[
+        # logging.FileHandler(f"./logs/{datetime.now().isoformat(timespec='seconds')}.log"),
+        logging.StreamHandler()
+    ])
+     
+    bvs(["files/na-abs.inp", "files/na-abs-out1.grd", 0.25])
+    # create_input(["cif-files/ternary-fluorides/EntryWithCollCode152949 (PbSnF4).cif", "files/pbsnf4.inp", "F-"])
 
 
 

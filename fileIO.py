@@ -294,8 +294,7 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
 
         # For every site, add label, element, os and cartesian coords
         for site in struct.sites:
-            helpMe = siteDict[site.label]
-            f.write(f"{site.label}\t{site.label}.{helpMe}")
+            f.write(f"{site.label}\t{site.label}-{siteDict[site.label]}\t")
             siteDict[site.label] += 1
             if isinstance(site.species, pmg.Composition):
                 

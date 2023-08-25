@@ -8,7 +8,7 @@ from datetime import datetime
 class alteredTestCase(unittest.TestCase):
 
     logging.basicConfig(
-            level=logging.INFO, format='\n%(asctime)s -  %(levelname)s -  %(message)s', handlers=[
+            level=logging.DEBUG, format='\n%(asctime)s -  %(levelname)s -  %(message)s', handlers=[
             # logging.FileHandler(f"./output/{datetime.now().isoformat(timespec='seconds')}.log"),
             logging.StreamHandler()
         ])
@@ -45,6 +45,8 @@ class TestSimpleBVStructure(alteredTestCase):
         self.assertEqual(len(self.obj.sites), 4)
         self.assertIsInstance(self.obj.sites["coords"][0], np.ndarray)
         self.assertAlmostEqual(self.obj.sites["coords"][1][1], 2.9653)
+        self.assertTrue(self.obj.sites.loc["Pb1-0"]["lp"])
+        self.assertFalse(self.obj.sites.loc["F1-0"]["lp"])
 
     def test_get_bv_params(self):
         self.assertIsInstance(self.obj.allBvParams, dict)
@@ -61,7 +63,6 @@ class TestSimpleBVStructure(alteredTestCase):
 
         # For a 5x5x5 supercell, the core cell should be located at (3,3,3)
         self.assertArrayAlmostEqual(self.obj.findCoreCell(self.obj.bufferArea), np.array((2,2,2)))
-        self.assertArrayAlmostEqual(self.obj.coreCartesian, np.array((0,0,0)))
         # self.assertArrayAlmostEqual(self.obj.coreCartesian, np.array((11.8612, 11.8612, 11.8612)))
 
         # Check the required volume parameters
@@ -136,19 +137,19 @@ class TestBVStructureInternalMethods(alteredTestCase):
         self.obj.vectors = np.array(((5,0,0),(0.5,5,0),(0,0,10)))
 
         # Check no shift
-        self.assertArrayAlmostEqual(self.obj.calcCartesian(np.array((0,0,0))), np.array((5,2.5,5)))
+        self.assertArrayAlmostEqual(self.obj.calcCartesian(np.array((0,0,0))), np.array((0,0,0)))
 
         # Check very simple shift
-        self.assertArrayAlmostEqual(self.obj.calcCartesian(np.array((1,0,0))), np.array((5.5,2.5,5)))
+        self.assertArrayAlmostEqual(self.obj.calcCartesian(np.array((1,0,0))), np.array((0.5,0,0)))
 
         # Check all shifts at once
-        self.assertArrayAlmostEqual(self.obj.calcCartesian(np.array((1,1,1))), np.array((5.55,3,6)))
+        self.assertArrayAlmostEqual(self.obj.calcCartesian(np.array((1,1,1))), np.array((0.55,0.5,1)))
 
         # Check non-one values
-        self.assertArrayAlmostEqual(self.obj.calcCartesian(np.array((1,2,5))), np.array((5.6,3.5,10)))
+        self.assertArrayAlmostEqual(self.obj.calcCartesian(np.array((1,2,5))), np.array((0.6,1,5)))
 
         # Check decimals
-        self.assertArrayAlmostEqual(self.obj.calcCartesian(np.array((0.2,2,0))), np.array((5.2,3.5,5)))
+        self.assertArrayAlmostEqual(self.obj.calcCartesian(np.array((0.2,2,0))), np.array((0.2,1,0)))
 
     def test_distance_w_cutoff(self):
 
@@ -192,7 +193,14 @@ class TestVectorBVS(alteredTestCase):
 
         self.obj.initaliseMap(1)
 
-        snResult = self.obj.findSiteVBVS("Sn1")
+        snResult = self.obj.findSiteVBVS("Sn1-0")
         logging.info(f"Sn VBVS Result - {snResult}")
         self.assertAlmostEqual(snResult[0], 0)
-        self.assertTrue(-1.15 < snResult[2] < 1.10)
+        self.assertTrue(-1.15 < snResult[2] < -1.10)
+
+    def test_lone_pair_creation(self):
+
+        self.obj.initaliseMap(1)
+        self.obj.createLonePairs()
+
+    

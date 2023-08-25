@@ -9,6 +9,7 @@ import fileIO
 class BVStructure:
 
     DB_LOCATION = "soft-bv-params.sqlite3"
+    LONE_PAIR_STRENGTH_CUTOFF = 0.5 # The magnitude of the bond valence vector required for the program to decide that a lone pair dummy site is required
 
     # --TESTED--
     def __init__(self, inputStr:str, allParams=False):
@@ -31,13 +32,16 @@ class BVStructure:
             for j in range(3):
                 self.vectors[i-3][j] = float(cols[j])
 
-        sites = []
+        # sites = []
+        self.sites = pd.DataFrame(columns=["label","element","ox_state","lp","coords"])
+
         for i in range(7, len(lines)):
             data = lines[i].split("\t")
-            sites.append({"label": data[0], "p1_label":data[1], "element": data[2], "ox_state": round(float(data[3])), "lp": bool(data[4]), "coords": np.array((float(data[5]), float(data[6]), float(data[7])))})
+            self.sites.loc[data[1]] = [data[0], data[2], round(float(data[3])), bool(int(data[4])), np.array((float(data[5]), float(data[6]), float(data[7])))]
+            # sites.append({"label": data[0], "p1_label":data[1], "element": data[2], "ox_state": round(float(data[3])), "lp": bool(data[4]), "coords": np.array((float(data[5]), float(data[6]), float(data[7])))})
 
-        self.sites = pd.DataFrame(sites)
-
+        # self.sites = pd.DataFrame(sites)
+        logging.debug(self.sites)
         self.db = fileIO.BVDatabase(self.DB_LOCATION)
         self.allBvParams = self.getBVParams(self.conductor)
         
@@ -85,7 +89,7 @@ class BVStructure:
 
         # For every ion that is not the conductor (currently assuming only one )
         # for i, fixedIon in self.sites.drop_duplicates(subset=["element","ox_state"]).iterrows():
-        for i, fixedIon in self.sites.drop_duplicates(subset=["label"]).iterrows():
+        for p1Label, fixedIon in self.sites.drop_duplicates(subset=["label"]).iterrows():
             if fixedIon["ox_state"] * inputIon[1] > 0:
                 continue
             else:
@@ -113,11 +117,10 @@ class BVStructure:
         # To do this, it find the core cell coordinates in terms of cells and then multiplies the cell vectors
         self.findCoreCell = np.vectorize(lambda x: math.floor(x/2))
         # self.coreCartesian = np.sum(self.findCoreCell(self.bufferArea) * self.vectors, axis=0)
-        self.coreCartesian = np.zeros(3)
 
         # Find the actual volume made by the cutoff radius and the core cell, allowing any other sites to be disregarded
-        self.reqVolStart = self.coreCartesian - np.array((self.rCutoff,self.rCutoff,self.rCutoff))
-        self.reqVolEnd = self.coreCartesian + np.sum(self.vectors, axis=0) + np.array((self.rCutoff,self.rCutoff,self.rCutoff))
+        self.reqVolStart = - np.array((self.rCutoff,self.rCutoff,self.rCutoff))
+        self.reqVolEnd =  np.sum(self.vectors, axis=0) + np.array((self.rCutoff,self.rCutoff,self.rCutoff))
 
     def findBufferedSites(self):
         """
@@ -125,27 +128,27 @@ class BVStructure:
         """
 
         # Create a copy of the sites dataframe to add to
-        self.bufferedSites = pd.DataFrame(columns=["label","p1_label","element","ox_state","lp","coords"])
+        self.bufferedSites = pd.DataFrame(columns=["label","element","ox_state","lp","coords"])
 
-        # For every cell in the determine buffer area
-        # Range if buffer area is 3, creates area from -1 -> 1; if 5, -2 -> 2 
-        # Note - range function does not include last number ∴ must have ceiling function for upper limit
-        for h in range(- math.floor(self.bufferArea[0]/2), math.ceil(self.bufferArea[0]/2)):
-            for k in range(- math.floor(self.bufferArea[1]/2), math.ceil(self.bufferArea[1]/2)):
-                for l in range(- math.floor(self.bufferArea[2]/2), math.ceil(self.bufferArea[2]/2)):
-                    
-                    # Skip if the cell is already there
-                    # if h == 0 and k == 0 and l == 0: continue
+        # For every site in the core cell
+        for site in self.sites.itertuples():
 
-                    # For every site in the core cell
-                    for i, site in self.sites.iterrows():
+            # For every cell that needs to be expanded to
+            # Range if buffer area is 3, creates area from -1 -> 1; if 5, -2 -> 2 
+            # Note - range function does not include last number ∴ must have ceiling function for upper limit
+            for h in range(- math.floor(self.bufferArea[0]/2), math.ceil(self.bufferArea[0]/2)):
+                for k in range(- math.floor(self.bufferArea[1]/2), math.ceil(self.bufferArea[1]/2)):
+                    for l in range(- math.floor(self.bufferArea[2]/2), math.ceil(self.bufferArea[2]/2)):
 
                         # Find its new site in the translated cell
-                        newCoord = self.translateCoord(site["coords"], (h,k,l))
+                        newCoord = self.translateCoord(site.coords, (h,k,l))
                         
                         # If the site is outwith the required area, disregard it
                         if self.insideSpace(self.reqVolStart, self.reqVolEnd, newCoord):
-                            self.bufferedSites.loc[len(self.bufferedSites)] = [site["label"], site["p1_label"], site["element"], site["ox_state"], site["lp"], newCoord]
+                            self.bufferedSites.loc[f"{site.Index}({h}{k}{l})"] = [site.label, site.element, site.ox_state, site.lp, newCoord]
+
+        logging.debug("Buffered sites have been generated:")
+        logging.debug(self.bufferedSites)
 
     def setUpVoxels(self):
         """
@@ -168,7 +171,7 @@ class BVStructure:
         """
         # position = np.copy(self.coreCartesian)
         
-        return self.coreCartesian + np.sum((shift / self.voxelNumbers).reshape(3,1) * self.vectors, axis=0)
+        return np.sum((shift / self.voxelNumbers).reshape(3,1) * self.vectors, axis=0)
         # for i in range(3):
         #     position[i] += shift[i] * self.resolution
 
@@ -225,7 +228,6 @@ class BVStructure:
         # Removes all conducting ions from the structure
         # selectedAtoms = self.bufferedSites[self.bufferedSites["element"] != self.conductor[0]]
         selectedAtoms = self.bufferedSites[self.bufferedSites["ox_state"] * self.conductor[1] < 0]
-        print(selectedAtoms)
 
         # For every voxel
         for h in range(self.voxelNumbers[0]):
@@ -286,10 +288,15 @@ class BVStructure:
 
             export.tofile(file,"  ")
 
-    def findSiteVBVS(self, label:str) -> np.ndarray:
-
+    def findSiteVBVS(self, p1Label:str) -> np.ndarray:
+        """
+            Finds the vector bond valence sum for a particular site in the lattice. Arguments: \n
+            p1Label - The P1 label of the site in the input file -  this uniquely identifies the site within one unit cell. \n
+            Returns a numpy array that is the vector bond valence sum.
+        """
+        logging.info(str(p1Label))
         # Get series representing the ion in question
-        targetIon = self.bufferedSites[self.bufferedSites["label"] == label].iloc[0]
+        targetIon = self.sites.loc[p1Label]
         targetIonTuple = (targetIon["element"], int(targetIon["ox_state"]))
         # Removes all anions/cations from the structure
         selectedAtoms = self.bufferedSites[self.bufferedSites["ox_state"] * targetIon["ox_state"] < 0]
@@ -302,9 +309,9 @@ class BVStructure:
         vbvSum = np.zeros(3)
 
         # For each atom in the structure
-        for i, fixedIon in selectedAtoms.iterrows():
+        for fixedIon in selectedAtoms.itertuples():
 
-            vector = targetIon["coords"] + self.coreCartesian - fixedIon["coords"]
+            vector = targetIon["coords"] - fixedIon.coords
 
             # Calculate the point to point distance between the voxel position and the atom position
             ri = self.calcDistanceWCV(vector)
@@ -320,20 +327,34 @@ class BVStructure:
 
             # Otherwise, calcualted the BV value and add it to the total
             else:
-                r0, ib = self.allBvParams[targetIonTuple][fixedIon["label"]][0:2]
-                bv = calcVBV(r0, ri, ib, vector)
-                vbvSum += bv
+                r0, ib = self.allBvParams[targetIonTuple][fixedIon.label][0:2]
+                vbv = calcVBV(r0, ri, ib, vector)
+                vbvSum += vbv
 
         return vbvSum
 
     def createLonePairs(self, distance:int = 1):
+
+        lpSiteDict = {}
         
-        for i, site in self.bufferedSites[self.bufferedSites["lp"]].iterrows():
-            vbvs = findSiteBVS(self.bufferedSites["CHANGE"])    
-         
+        for site in self.sites[self.sites["lp"]].itertuples():
+            vbvs = self.findSiteVBVS(site.Index)
+            magVbvs = np.linalg.norm(vbvs) 
+            if magVbvs > self.LONE_PAIR_STRENGTH_CUTOFF:
+                lpNormVec = -vbvs / magVbvs
+                lpSiteDict[site.Index] = lpNormVec
+
+        for site in self.bufferedSites[self.bufferedSites["lp"]].itertuples():
+            p1Label = site.Index.split("(")[0]
+            "label","element","ox_state","lp","coords"
+            if p1Label in lpSiteDict.keys():
+                self.bufferedSites.loc["lp" + site.Index] = [f"lp{site.label}", "LP", -2, 0, site.coords + lpSiteDict[p1Label]*distance]
+
+        logging.debug(self.bufferedSites)
+        return
+
         # for i, site in self.sites.iterrows():
         #     if site["lp"]:
-
 
 
 

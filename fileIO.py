@@ -1,4 +1,6 @@
 import CifFile as cf
+import pandas as pd
+import numpy as np
 import sqlite3
 import logging
 import re

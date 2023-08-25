@@ -288,6 +288,43 @@ class BVStructure:
 
             export.tofile(file,"  ")
 
+    # Can't use pycifrw, as starfile code has errors 
+    def dfToCif(self, outFile:str):
+
+        with open(outFile, 'w') as f:
+            f.write("bv-project-export\n")
+
+            cellParams = ["_cell_length_a",
+                          "_cell_length_b",
+                          "_cell_length_c",
+                          "_cell_angle_alpha",
+                          "_cell_angle_beta",
+                          "_cell_angle_gamma"
+                          ]
+            
+            for i in range(len(cellParams)):
+                f.write(f"{cellParams[i]} {self.params[i]}\n")
+
+            f.write("_space_group_IT_number 1\n")
+            f.write("""loop_
+                    _atom_site_label
+                    _atom_site_type_symbol
+                    _atom_site_fract_x
+                    _atom_site_fract_y
+                    _atom_site_fract_z
+                    _atom_site_occupancy
+                    """)
+            
+            weeLambda = lambda x: "He" if x == "LP" else x
+            for site in self.bufferedSites.itertuples():
+                if self.insideSpace(np.zeros(3), np.sum(self.vectors, axis=0), site.coords):
+                    f.write(f"{site.label} {weeLambda(site.element)} {site.coords[0]/self.params[0]} {site.coords[1]/self.params[1]} {site.coords[2]/self.params[2]} 1\n")
+
+
+            # for site in self.sites.itertuples():
+            #     f.write(f"{site.label} {weeLambda(site.element)} {site.coords[0]/self.params[0]} {site.coords[1]/self.params[1]} {site.coords[2]/self.params[2]} 1\n")
+
+
     def findSiteVBVS(self, p1Label:str) -> np.ndarray:
         """
             Finds the vector bond valence sum for a particular site in the lattice. Arguments: \n
@@ -341,12 +378,12 @@ class BVStructure:
             vbvs = self.findSiteVBVS(site.Index)
             magVbvs = np.linalg.norm(vbvs) 
             if magVbvs > self.LONE_PAIR_STRENGTH_CUTOFF:
-                lpNormVec = -vbvs / magVbvs
+                lpNormVec = vbvs / magVbvs
                 lpSiteDict[site.Index] = lpNormVec
 
         for site in self.bufferedSites[self.bufferedSites["lp"]].itertuples():
             p1Label = site.Index.split("(")[0]
-            "label","element","ox_state","lp","coords"
+            #"label","element","ox_state","lp","coords"
             if p1Label in lpSiteDict.keys():
                 self.bufferedSites.loc["lp" + site.Index] = [f"lp{site.label}", "LP", -2, 0, site.coords + lpSiteDict[p1Label]*distance]
 

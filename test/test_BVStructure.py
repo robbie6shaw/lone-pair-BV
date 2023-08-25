@@ -202,5 +202,7 @@ class TestVectorBVS(alteredTestCase):
 
         self.obj.initaliseMap(1)
         self.obj.createLonePairs()
+        logging.debug(self.obj.sites)
+        self.obj.dfToCif("cif-files/lp5.cif")
 
     

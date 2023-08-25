@@ -1,0 +1,1 @@
+fileIO.py createInputFromCif() - The automatic lone pair assignment should take into account the oxidation state of the element, not just that it is a heavy atom. 

@@ -114,6 +114,14 @@ class TestBVStructureInternalMethods(alteredTestCase):
         #     self.struct.translateCoord(coordinate, (1.54,23.1,0))
         self.assertArrayAlmostEqual(self.obj.translateCoord(coordinate, (1,1,1)), np.array((9.9306,10.9306,12.9306)))
 
+    def test_frac_from_cart(self):
+
+        self.assertArrayAlmostEqual(self.obj.fracFromCart(np.zeros(3)), np.zeros(3))
+        self.assertArrayAlmostEqual(self.obj.fracFromCart(np.sum(self.obj.vectors, axis=0)), np.array((1,1,1)))
+        self.assertArrayAlmostEqual(self.obj.fracFromCart(np.array((1.976866667, 1.976866667, 3.953733333))), np.array((0.3333333, 0.3333333, 0.666666667)))
+        self.assertArrayAlmostEqual(self.obj.fracFromCart(np.array((8.30284, 8.30284, 8.30284))), np.array((1.4, 1.4, 1.4)))
+        self.assertArrayAlmostEqual(self.obj.fracFromCart(np.array((-2.9653, -5.9306, 5.9306))), np.array((-0.5, -1, 1)))
+
     def test_insideSpace(self):
         start = np.array((0,0,0))
         end = np.array((1,1,1))
@@ -193,16 +201,38 @@ class TestVectorBVS(alteredTestCase):
 
         self.obj.initaliseMap(1)
 
-        snResult = self.obj.findSiteVBVS("Sn1-0")
+        snResult = self.obj.findSiteBVS("Sn1-0")
         logging.info(f"Sn VBVS Result - {snResult}")
         self.assertAlmostEqual(snResult[0], 0)
         self.assertTrue(-1.15 < snResult[2] < -1.10)
 
-    def test_lone_pair_creation(self):
+    # def test_lone_pair_creation(self):
 
-        self.obj.initaliseMap(1)
-        self.obj.createLonePairs()
-        logging.debug(self.obj.sites)
-        self.obj.dfToCif("cif-files/lp5.cif")
+    #     self.obj.initaliseMap(1)
+    #     self.obj.createLonePairs()
+    #     logging.debug(self.obj.sites)
+    #     self.obj.dfToCif("cif-files/lp5.cif")
 
+
+    # def test_lone_pair_creation2(self):
+
+    #     self.obj = bv2.BVStructure.from_file("files/ksbf4.inp")
+    #     self.obj.initaliseMap(1)
+    #     self.obj.createLonePairs()
+    #     logging.debug(self.obj.sites)
+    #     self.obj.dfToCif("cif-files/ksbf4lp.cif")
+
+class TestLonePairs(alteredTestCase):
+
+    def setUp(self):
+        self.obj = bv2.BVStructure.from_file("test/pbsnf4-for-testing.inp")
+
+    def test_linear_penalty_function(self):
+        self.assertAlmostEqual(self.obj.penaltyLinF(-2, 2, 0.5), 1/3)
+        self.assertAlmostEqual(self.obj.penaltyLinF(-2, 6, 0.5), 0)
+
+    def test_quadratic_penalty_function(self):
+
+        self.assertAlmostEqual(self.obj.penaltyQuadF(-2, 2, 0.5), 2/9)
+        self.assertAlmostEqual(self.obj.penaltyQuadF(-2, 6, 0.5), 0)
     

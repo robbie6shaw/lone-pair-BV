@@ -10,6 +10,8 @@ class BVStructure:
 
     DB_LOCATION = "soft-bv-params.sqlite3"
     LONE_PAIR_STRENGTH_CUTOFF = 0.5 # The magnitude of the bond valence vector required for the program to decide that a lone pair dummy site is required
+    # LIN_PENALTY_CONSTANT = 0.08
+    # QUAD_PENALTY_CONSTANT = 0.1
 
     # --TESTED--
     def __init__(self, inputStr:str, allParams=False):
@@ -27,10 +29,13 @@ class BVStructure:
         extraP = lines[2].split("\t")
         self.volume = float(extraP[0])
         self.vectors = np.zeros((3,3))
+        
         for i in range(3,6):
             cols = lines[i].split("\t")
             for j in range(3):
                 self.vectors[i-3][j] = float(cols[j])
+
+        self.inverseVectors = np.linalg.inv(self.vectors)
 
         # sites = []
         self.sites = pd.DataFrame(columns=["label","element","ox_state","lp","coords"])
@@ -71,11 +76,18 @@ class BVStructure:
         """
         return coord + self.vectors[0]*shift[0] + self.vectors[1]*shift[1] + self.vectors[2]*shift[2]
     
+    def fracFromCart(self, cartesian:np.ndarray):
+        return np.matmul(cartesian, self.inverseVectors)
+    
+    def cartFromFrac(self, fractional:np.ndarray):
+        return np.matmul(fractional, self.inverseVectors)
+    
     # --TESTED--
     def insideSpace(self, start:np.ndarray, end:np.ndarray, point:np.ndarray) -> bool:
         """
-            Checks whether a coordinate is inside a space bounded by two points. All arguments must be numpy arrays.
+            Checks whether a coordinate is inside a space bounded by two points. All arguments must be *fractional coordinates* and numpy arrays.
         """
+        # fracPoint = np.matmul(point, self.inverseVectors)
         return (start <= point).all() and (point <= end).all()
     
     # --TESTED--
@@ -120,7 +132,9 @@ class BVStructure:
 
         # Find the actual volume made by the cutoff radius and the core cell, allowing any other sites to be disregarded
         self.reqVolStart = - np.array((self.rCutoff,self.rCutoff,self.rCutoff))
+        self.reqFracStart = self.fracFromCart(self.reqVolStart)
         self.reqVolEnd =  np.sum(self.vectors, axis=0) + np.array((self.rCutoff,self.rCutoff,self.rCutoff))
+        self.reqFracEnd = self.fracFromCart(self.reqVolEnd)
 
     def findBufferedSites(self):
         """
@@ -144,7 +158,7 @@ class BVStructure:
                         newCoord = self.translateCoord(site.coords, (h,k,l))
                         
                         # If the site is outwith the required area, disregard it
-                        if self.insideSpace(self.reqVolStart, self.reqVolEnd, newCoord):
+                        if self.insideSpace(self.reqFracStart, self.reqFracEnd, self.fracFromCart(newCoord)):
                             self.bufferedSites.loc[f"{site.Index}({h}{k}{l})"] = [site.label, site.element, site.ox_state, site.lp, newCoord]
 
         logging.debug("Buffered sites have been generated:")
@@ -220,13 +234,12 @@ class BVStructure:
         logging.info("Successful initalisation of the map")
         logging.debug(self.bufferedSites)
 
-    def populateMap(self):
+    def populateMapAbs(self):
         """
             Main function that populates the map space with BVS values. 
         """
 
-        # Removes all conducting ions from the structure
-        # selectedAtoms = self.bufferedSites[self.bufferedSites["element"] != self.conductor[0]]
+        # Removes all anions/cations from the structure
         selectedAtoms = self.bufferedSites[self.bufferedSites["ox_state"] * self.conductor[1] < 0]
 
         # For every voxel
@@ -248,7 +261,7 @@ class BVStructure:
 
                         # If the seperation is less than 1 Å, set the BV value to very high value so the site is disregarded. This will cause the atom loop to be exited -> The site has a BV too high to be considered.
                         if ri < 1:
-                            bvSum = 100
+                            bvSum = 20
                             break
 
                         # If the seperation is greater than the cutoff radius, the bv contribution is 0.
@@ -266,12 +279,78 @@ class BVStructure:
 
             logging.info(f"Completed plane {h} out of {self.voxelNumbers[0] - 1}")
 
+    def penaltyLinF(self, charge:int, distance:float, penaltyK:float):
+        return penaltyK * (self.conductor[1] * charge)*(1/distance - 1/self.rCutoff)
+    
+    def penaltyQuadF(self, charge:int, distance:float, penaltyK:float):
+        return penaltyK * (self.conductor[1] * charge)*(1/distance**2 - 1/(self.rCutoff**2))
+
+    def populateMismatchMap(self, penalty:float = 0, fType:str = "linear", only_penalty:bool = False):
+        """
+            Function that populates the map with the bond valence mismatch values. A penalty function can be enabled with the parameter of `penalty`. If the value is 0, no penalty is added; otherwise this is the constant of proportionaltity is used in the penalty function. Recommended values are around 0.1.
+        """
+
+        if fType in ["linear", "lin", "l", "1"]:
+            penF = self.penaltyLinF
+        elif fType in ["quadratic", "quad", "q", "2"]:
+            penF = self.penaltyQuadF
+
+        # Removes all conducting ions from the structure
+        selectedAtoms = self.bufferedSites[self.bufferedSites["element"] != self.conductor[0]]
+
+        # For every voxel
+        for h in range(self.voxelNumbers[0]):
+            for k in range(self.voxelNumbers[1]):
+                for l in range(self.voxelNumbers[2]):
+
+                    # Calculate the voxels cartesian coordinates
+                    pos = self.calcCartesian(np.array((h,k,l)))
+
+                    # Initialise the bond valence sum
+                    bvSum = 0.
+                    penaltySum = 0.
+
+                    # For each atom in the structure
+                    for i, fixedIon in selectedAtoms.iterrows():
+
+                        # Calculate the point to point distance between the voxel position and the atom position
+                        ri = self.calcDistanceWCutoff(pos, fixedIon["coords"])
+
+
+                        # If the seperation is greater than the cutoff radius, the bv contribution is 0.
+                        if ri > self.rCutoff:
+                            continue
+
+                        elif (fixedIon["ox_state"] * self.conductor[1]) < 0:
+                            if not only_penalty:
+                                # If the seperation is less than 1 Å, set the BV value to very high value so the site is disregarded. This will cause the atom loop to be exited -> The site has a BV too high to be considered.
+                                if ri < 1:
+                                    bvSum = 20
+                                    break
+
+                                # Otherwise, calculated the BV value and add it to the total
+                                else:
+                                    r0, ib = self.allBvParams[fixedIon["label"]][0:2]
+                                    bvSum += calcBV(r0, ri, ib)
+
+                        elif penalty != 0 :
+                            penaltySum += penF(-2, ri, penalty)
+
+                    # Update the map
+                    if only_penalty:
+                        self.map[h][k][l] = penaltySum
+                    else:
+                        self.map[h][k][l] = abs(bvSum - abs(self.conductor[1])) + penaltySum
+
+            logging.info(f"Completed plane {h} out of {self.voxelNumbers[0] - 1}")
+
+
     def deltaBV(self, value:float, ion:str):
         if ion == "F-" or ion == "Na+":
             result = abs(value - 1)
             return result
 
-    def exportMap(self, fileName:str, dataType:str):
+    def exportMap(self, fileName:str, dataType:str = None):
 
         if dataType == "delta":
             deltaBV_vector = np.vectorize(self.deltaBV, excluded=("ion"))
@@ -287,6 +366,12 @@ class BVStructure:
             file.write("%i %i %i\n" % tuple(self.voxelNumbers.tolist()))
 
             export.tofile(file,"  ")
+
+    def resetMap(self):
+        """
+            Resets the map back to its blank state, filled with zeroes.
+        """
+        self.map = np.zeros(self.voxelNumbers)
 
     # Can't use pycifrw, as starfile code has errors 
     def dfToCif(self, outFile:str):
@@ -306,32 +391,34 @@ class BVStructure:
                 f.write(f"{cellParams[i]} {self.params[i]}\n")
 
             f.write("_space_group_IT_number 1\n")
-            f.write("""loop_
-                    _atom_site_label
-                    _atom_site_type_symbol
-                    _atom_site_fract_x
-                    _atom_site_fract_y
-                    _atom_site_fract_z
-                    _atom_site_occupancy
-                    """)
-            
-            weeLambda = lambda x: "He" if x == "LP" else x
+            f.write("loop_\n_atom_site_label\n_atom_site_type_symbol\n_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z\n_atom_site_occupancy\n")
+            lpSwap = lambda x: "He" if x == "LP" else x
             for site in self.bufferedSites.itertuples():
-                if self.insideSpace(np.zeros(3), np.sum(self.vectors, axis=0), site.coords):
-                    f.write(f"{site.label} {weeLambda(site.element)} {site.coords[0]/self.params[0]} {site.coords[1]/self.params[1]} {site.coords[2]/self.params[2]} 1\n")
+                fracCoords = self.fracFromCart(site.coords)
+                if self.insideSpace(np.zeros(3), np.array((1,1,1)), fracCoords):
+                    f.write(f"{site.label} {lpSwap(site.element)} {fracCoords[0]} {fracCoords[1]} {fracCoords[2]} 1\n")
 
 
             # for site in self.sites.itertuples():
             #     f.write(f"{site.label} {weeLambda(site.element)} {site.coords[0]/self.params[0]} {site.coords[1]/self.params[1]} {site.coords[2]/self.params[2]} 1\n")
 
 
-    def findSiteVBVS(self, p1Label:str) -> np.ndarray:
+    def findSiteBVS(self, p1Label:str, vector=False) -> np.ndarray:
         """
-            Finds the vector bond valence sum for a particular site in the lattice. Arguments: \n
+            Finds the bond valence sum for a particular site in the lattice. Arguments: \n
             p1Label - The P1 label of the site in the input file -  this uniquely identifies the site within one unit cell. \n
+            vector - If true, calculates the vector bond valence sum; if false simply calculates the normal sum. \n
             Returns a numpy array that is the vector bond valence sum.
         """
-        logging.info(str(p1Label))
+
+        if vector:
+            bvsFunction = calcVBV
+            vbvSum = np.zeros(3)
+        else:
+            bvsFunction = calcBV
+            vbvSum = 0.
+
+        logging.debug(f"Calculating site BVS for {p1Label}")
         # Get series representing the ion in question
         targetIon = self.sites.loc[p1Label]
         targetIonTuple = (targetIon["element"], int(targetIon["ox_state"]))
@@ -341,9 +428,6 @@ class BVStructure:
         # Ensure the required bv parmeters have been found
         if targetIonTuple not in self.allBvParams.keys():
             self.allBvParams[targetIonTuple] = self.getBVParams(targetIonTuple)
-        
-        # Initialise the bond valence sum
-        vbvSum = np.zeros(3)
 
         # For each atom in the structure
         for fixedIon in selectedAtoms.itertuples():
@@ -365,40 +449,41 @@ class BVStructure:
             # Otherwise, calcualted the BV value and add it to the total
             else:
                 r0, ib = self.allBvParams[targetIonTuple][fixedIon.label][0:2]
-                vbv = calcVBV(r0, ri, ib, vector)
+                vbv = bvsFunction(r0, ri, ib, vector)
                 vbvSum += vbv
 
         return vbvSum
 
     def createLonePairs(self, distance:int = 1):
+        """
+            Method that creates dummy sites representing lone pairs in the structure. Accepts optional argument to set the distance these lone pairs should be from the atom that they reside on.
+        """
 
+        # Create a dictionary of the lone pair sites and the unit vector representing their direction.
         lpSiteDict = {}
         
         for site in self.sites[self.sites["lp"]].itertuples():
-            vbvs = self.findSiteVBVS(site.Index)
-            magVbvs = np.linalg.norm(vbvs) 
+            vbvs = self.findSiteBVS(site.Index, vector=True)
+            magVbvs = np.linalg.norm(vbvs)
             if magVbvs > self.LONE_PAIR_STRENGTH_CUTOFF:
                 lpNormVec = vbvs / magVbvs
                 lpSiteDict[site.Index] = lpNormVec
 
+        # For each of these sites in the buffered array, add a lone pair dummy site.
         for site in self.bufferedSites[self.bufferedSites["lp"]].itertuples():
             p1Label = site.Index.split("(")[0]
-            #"label","element","ox_state","lp","coords"
             if p1Label in lpSiteDict.keys():
                 self.bufferedSites.loc["lp" + site.Index] = [f"lp{site.label}", "LP", -2, 0, site.coords + lpSiteDict[p1Label]*distance]
 
         logging.debug(self.bufferedSites)
-        return
-
-        # for i, site in self.sites.iterrows():
-        #     if site["lp"]:
+    
 
 
 
 def generate_structure(cifFile:str) -> pmg.Structure:
     return pmg.Structure.from_file(cifFile)
 
-def calcBV(r0:float, ri:float, ib:float) -> float :
+def calcBV(r0:float, ri:float, ib:float, vector = None) -> float :
     """
         Calculate the bond valence from distance. Arguments: \n
         r0 - The radius bond valence parameter \n

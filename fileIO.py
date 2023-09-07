@@ -6,6 +6,7 @@ import logging
 import re
 import pymatgen.core as pmg
 import numpy as np
+import collections
 
 ## SHARED METHODS IN CORE CLASS
 class core:
@@ -13,6 +14,8 @@ class core:
     ION_REGEX = re.compile("([A-Za-z]{,2})(\d*)(\+|-)")
     RESULT_CONVERTER = lambda self, x: "1" if x == "" else x
     LONE_PAIR_ELEMENTS = ["Pb", "Sn", "Bi", "Sb", "Tl"]
+    ion = collections.namedtuple("Ion", ["element", "os"])
+    bvparam = collections.namedtuple("BVParam", ['r0', 'ib', 'cn', 'r_cutoff', 'rmin', 'd0'])
 
     def interpretIon(self, ion):
             """
@@ -24,7 +27,7 @@ class core:
             if result is None:
                 raise Exception(f"Cannot interpret ion ({ion}) sucessfully.")
             else:
-                return (result[1], int(result[3] + self.RESULT_CONVERTER(result[2])))
+                return self.ion(element = result[1], os = int(result[3] + self.RESULT_CONVERTER(result[2])))
             
     def hasLonePair(self, element:str):
 
@@ -39,6 +42,7 @@ class BVDatabase:
     """
 
     CORE = core()
+    BVParams = collections.namedtuple("BVParams", ['r0', 'b', 'ib', 'cn', 'r_cutoff', 'i1_radius', 'i2_radius', 'i1_softness', 'i2_softness', 'i1_period', 'i2_period','i1_block', 'i2_block'])
 
     def __init__(self, dbLocation:str):
         """
@@ -108,7 +112,10 @@ class BVDatabase:
                 symbol VARCHAR(2),
                 os INTEGER(1),
                 radii REAL,
-                softness REAL                   
+                softness REAL,
+                period INT,
+                ggroup INT,
+                block INT                
             );
 
             CREATE TABLE BVParam (
@@ -184,8 +191,23 @@ class BVDatabase:
 
         self.execute("UPDATE BVParam SET cn = ?, r_cutoff = ? WHERE id = ?", (cn, rCutoff, paramId, ))
 
+    def addInfoIon(self, ionId:int, radii:float, softness:float, period:int, group:int, block:int):
+        """
+            Updates the ion database entry to add information on the radius, softness and principle quantum number, only included in the softBV parameters.
+        """
+
+        self.execute("UPDATE Ion SET radii = ?, softness = ?, period = ?, ggroup = ?, block = ? WHERE id = ?", (radii, softness, period, group, block, ionId))
+
+    def rmin(self, softness1:float, softness2:float, r0:float, b:float, os:int, cn:float):
+        return (0.9185 + 0.2285*abs(softness1 - softness2))*r0 - b*np.log(os/cn)
     
-    def getParams(self, ion1:str|tuple, ion2:str|tuple):
+    def d0(self, b:float, os1:int, os2:int, block1:int, rmin:float, period1:int, period2:int):
+        if block1 <= 1: c = 1
+        else: c = 2 
+
+        return ((b**2)/2 * 14.4 * (c*(os1*os2)**(1/c)) / (rmin*np.sqrt(period1 * period2)))
+    
+    def getParams(self, ion1:str|tuple, ion2:str|tuple, bvse:bool = False):
         """
             Finds the parameters for a combination of two ions and returns them. The input ions should be in the format of Symbol-OS Digit-Sign.
 
@@ -195,8 +217,9 @@ class BVDatabase:
             ion1 = self.CORE.interpretIon(ion1)
         if isinstance(ion2, str):
             ion2 = self.CORE.interpretIon(ion2)
-
-        self.execute("SELECT r0, ib, cn, r_cutoff FROM BVParam JOIN Ion i1 JOIN Ion i2 On BVParam.ion1 = i1.id AND BVParam.ion2 = i2.id WHERE (i1.symbol = ? AND i1.os = ? AND i2.symbol = ? AND i2.os = ?) OR (i2.symbol = ? AND i2.os = ? AND i1.symbol = ? AND i1.os = ?)", (ion1[0], int(ion1[1]), ion2[0], int(ion2[1]), ion1[0], int(ion1[1]), ion2[0], int(ion2[1]),))
+        
+        #                    0   1  2   3   4         5         6         7            8            9          10         11        12
+        self.execute("SELECT r0, b, ib, cn, r_cutoff, i1.radii, i2.radii, i1.softness, i2.softness, i1.period, i2.period, i1.block, i2.block FROM BVParam JOIN Ion i1 JOIN Ion i2 On BVParam.ion1 = i1.id AND BVParam.ion2 = i2.id WHERE (i1.symbol = ? AND i1.os = ? AND i2.symbol = ? AND i2.os = ?) OR (i2.symbol = ? AND i2.os = ? AND i1.symbol = ? AND i1.os = ?)", (ion1[0], int(ion1[1]), ion2[0], int(ion2[1]), ion1[0], int(ion1[1]), ion2[0], int(ion2[1]),))
 
         result = self.fetchall()
         if result is None or len(result) == 0:
@@ -204,7 +227,14 @@ class BVDatabase:
         elif len(result) != 1:
             logging.warn(f"Multiple different database entries for the same ions ({ion1}, {ion2})")
         
-        return result[0]
+        result = result[0]
+
+        if bvse:
+            rmin = self.rmin(result[7], result[8], result[0], result[1], ion1.os, result[3])
+            d0 = self.d0(result[1], ion1.os, ion2.os, result[11], rmin, result[9], result[10])
+            return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], rmin = rmin, d0 = d0)
+        else:
+            return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], rmin = None, d0 = None)
 
 
 def readCif(fileLocation:str):
@@ -215,7 +245,7 @@ def fileToDb(fileIn:str, fileOut:str):
         Converts any recognised file into a bond valence parameter database
     """
     if fileIn[-4:] == ".dat":
-        datToDb(fileIn, fileOut)
+        bvDatToDb(fileIn, fileOut)
     elif fileIn[-4:] == ".cif":
         cifToDb(fileIn, fileOut) 
     else:
@@ -235,7 +265,7 @@ def cifToDb(fileIn:str, fileOut:str):
 
     db.close()
 
-def datToDb(fileIn:str, fileOut:str):
+def bvDatToDb(fileIn:str, fileOut:str):
     """
         Convert the bond valence dat file from softBV into a local database format
     """
@@ -261,13 +291,39 @@ def datToDb(fileIn:str, fileOut:str):
 
     db.close()
 
+def ionDatToDb(fileIn:str, fileOut:str):
+    """
+        Convert ion database file from softBV into a local database format
+    """
+
+    db = BVDatabase(fileOut)
+    
+    with open(fileIn, "r") as data:
+        entries = data.readlines()
+
+        started = False
+        for entry in entries:
+            if started and entry == "DATA_END\n":
+                break
+            elif started:
+                row = entry.split()
+                ionId = db.getOrInsertIon(row[1], int(row[2]))
+                db.addInfoIon(ionId, float(row[8]), float(row[9]), int(row[5]), int(row[6]), int(row[7]))
+            elif entry == "DATA_START\n":
+                started = True
+            else:
+                continue
+
+    db.close()
+
+
 def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
     
     CORE = core()
 
     # Create a pymatgen object
     struct = pmg.Structure.from_file(fileIn)
-    conductorSymb, conductorOS = CORE.interpretIon(conductor)
+    conductor = CORE.interpretIon(conductor)
 
     if fileIn[-4:] != ".cif":
         logging.error(f"Incorrect file format. The input file should be a cif file and not a {fileIn[-3:]} file")
@@ -278,7 +334,7 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
     with open(fileOut, "w") as f:
 
         # Give information on conductor choice and the lattice
-        f.write(f"{conductorSymb}\t{conductorOS}\n")
+        f.write(f"{conductor.element}\t{conductor.os}\n")
         f.write(f"{struct.lattice.a}\t{struct.lattice.b}\t{struct.lattice.c}\t{struct.lattice.alpha}\t{struct.lattice.beta}\t{struct.lattice.gamma}\n")
         f.write(f"{struct.lattice.volume}\n")
         for i in range(3):
@@ -325,7 +381,8 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
     
 # createInputFromCif("cif-files/1521543.cif", "files/na-abs.inp", "Na+")
 # createInputFromCif("cif-files/Binary Fluorides/ICSD_CollCode5270 (beta-PbF2).cif", "files/na-abs.inp", "F-")
-# datToDb("cif-files/database_binary.dat", "soft-bv-params.sqlite3")
+# bvDatToDb("cif-files/database_binary.dat", "soft-bv-params.sqlite3")
+# ionDatToDb("cif-files/database_unitary.dat", "soft-bv-params.sqlite3")
 # db = BVDatabase("soft-bv-params.sqlite3")
 # print(db.getParams("Pb2+","O2-"))
         

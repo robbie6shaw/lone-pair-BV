@@ -4,7 +4,7 @@ import pymatgen.core as pmg
 import math, logging, sys
 import numpy as np
 import pandas as pd
-import fileIO
+from fileIO import *
 
 class BVStructure:
 
@@ -12,6 +12,8 @@ class BVStructure:
     LONE_PAIR_STRENGTH_CUTOFF = 0.5 # The magnitude of the bond valence vector required for the program to decide that a lone pair dummy site is required
     # LIN_PENALTY_CONSTANT = 0.08
     # QUAD_PENALTY_CONSTANT = 0.1
+
+    CORE = core()
 
     # --TESTED--
     def __init__(self, inputStr:str, allParams=False):
@@ -24,7 +26,7 @@ class BVStructure:
         lines = inputStr.splitlines()
 
         self.rCutoff = 6
-        self.conductor = (lines[0].split("\t")[0], int(lines[0].split("\t")[1]))
+        self.conductor = self.CORE.ion(element = lines[0].split("\t")[0], os = int(lines[0].split("\t")[1]))
         self.params = tuple(map(float, lines[1].split("\t")))
         extraP = lines[2].split("\t")
         self.volume = float(extraP[0])
@@ -47,7 +49,7 @@ class BVStructure:
 
         # self.sites = pd.DataFrame(sites)
         logging.debug(self.sites)
-        self.db = fileIO.BVDatabase(self.DB_LOCATION)
+        self.db = BVDatabase(self.DB_LOCATION)
         self.allBvParams = self.getBVParams(self.conductor)
         
         if allParams:
@@ -105,8 +107,8 @@ class BVStructure:
             if fixedIon["ox_state"] * inputIon[1] > 0:
                 continue
             else:
-                bvParams[fixedIon["label"]] = self.db.getParams(inputIon, (fixedIon["element"], fixedIon["ox_state"]))
-                maxCutoff = max(maxCutoff, bvParams[fixedIon["label"]][3])
+                bvParams[fixedIon["label"]] = self.db.getParams(inputIon, self.CORE.ion(element = fixedIon["element"], os = fixedIon["ox_state"]))
+                maxCutoff = max(maxCutoff, bvParams[fixedIon["label"]].r_cutoff)
 
         self.rCutoff = maxCutoff
         return bvParams
@@ -240,7 +242,7 @@ class BVStructure:
         """
 
         # Removes all anions/cations from the structure
-        selectedAtoms = self.bufferedSites[self.bufferedSites["ox_state"] * self.conductor[1] < 0]
+        selectedAtoms = self.bufferedSites[self.bufferedSites["ox_state"] * self.conductor.os < 0]
 
         # For every voxel
         for h in range(self.voxelNumbers[0]):
@@ -270,8 +272,8 @@ class BVStructure:
 
                         # Otherwise, calcualted the BV value and add it to the total
                         else:
-                            r0, ib = self.allBvParams[fixedIon["label"]][0:2]
-                            bv = calcBV(r0, ri, ib)
+                            params = self.allBvParams[fixedIon["label"]]
+                            bv = calcBV(params.r0, ri, params.ib)
                             bvSum += bv
 
                     # Update the map
@@ -280,10 +282,10 @@ class BVStructure:
             logging.info(f"Completed plane {h} out of {self.voxelNumbers[0] - 1}")
 
     def penaltyLinF(self, charge:int, distance:float, penaltyK:float):
-        return penaltyK * (self.conductor[1] * charge)*(1/distance - 1/self.rCutoff)
+        return penaltyK * (self.conductor.os * charge)*(1/distance - 1/self.rCutoff)
     
     def penaltyQuadF(self, charge:int, distance:float, penaltyK:float):
-        return penaltyK * (self.conductor[1] * charge)*(1/distance**2 - 1/(self.rCutoff**2))
+        return penaltyK * (self.conductor.os * charge)*(1/distance**2 - 1/(self.rCutoff**2))
 
     def populateMismatchMap(self, penalty:float = 0, fType:str = "linear", only_penalty:bool = False):
         """
@@ -296,7 +298,7 @@ class BVStructure:
             penF = self.penaltyQuadF
 
         # Removes all conducting ions from the structure
-        selectedAtoms = self.bufferedSites[self.bufferedSites["element"] != self.conductor[0]]
+        selectedAtoms = self.bufferedSites[self.bufferedSites["element"] != self.conductor.element]
 
         # For every voxel
         for h in range(self.voxelNumbers[0]):
@@ -321,7 +323,7 @@ class BVStructure:
                         if ri > self.rCutoff:
                             continue
 
-                        elif (fixedIon["ox_state"] * self.conductor[1]) < 0:
+                        elif (fixedIon["ox_state"] * self.conductor.os) < 0:
                             if not only_penalty:
                                 # If the seperation is less than 1 Å, set the BV value to very high value so the site is disregarded. This will cause the atom loop to be exited -> The site has a BV too high to be considered.
                                 if ri < 1:
@@ -340,7 +342,7 @@ class BVStructure:
                     if only_penalty:
                         self.map[h][k][l] = penaltySum
                     else:
-                        self.map[h][k][l] = abs(bvSum - abs(self.conductor[1])) + penaltySum
+                        self.map[h][k][l] = abs(bvSum - abs(self.conductor)) + penaltySum
 
             logging.info(f"Completed plane {h} out of {self.voxelNumbers[0] - 1}")
 
@@ -448,8 +450,8 @@ class BVStructure:
 
             # Otherwise, calcualted the BV value and add it to the total
             else:
-                r0, ib = self.allBvParams[targetIonTuple][fixedIon.label][0:2]
-                vbv = bvsFunction(r0, ri, ib, vector)
+                params = self.allBvParams[targetIonTuple][fixedIon.label]
+                vbv = bvsFunction(params.r0, ri, params.ib, vector)
                 vbvSum += vbv
 
         return vbvSum

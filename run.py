@@ -130,8 +130,8 @@ else:
     ])
 
     #analyse(["cif-files/bulk-bvsm/PbSnF4-0.08l.grd", 0.1])  
-    # bvs_penalty(["files/pbsnf4.inp", "files/pbsnf4lp.grd", 0.25])
-    render(["cif-files/bulk-bvsm/KSn2F5.inp","cif-files/bulk-bvsm/KSn2F5-gen.cif"])
+    bvs(["files/pbsnf4.inp", "files/temp.grd", 1])
+    # render(["cif-files/bulk-bvsm/KSn2F5.inp","cif-files/bulk-bvsm/KSn2F5-gen.cif"])
     # create_input(["cif-files/ternary-fluorides/EntryWithCollCode152949 (PbSnF4).cif", "files/pbsnf4.inp", "F-"])
 
 

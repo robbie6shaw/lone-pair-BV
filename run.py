@@ -41,7 +41,7 @@ def bvs_only_penalty(args:list):
         pbsnf4.initaliseMap(float(args[2]))
         pbsnf4.createLonePairs()
         if len(args) == 3:
-            pbsnf4.populateMismatchMap(penalty=0.08, fType="quadratic", only_penalty=True)
+            pbsnf4.populateMismatchMap(penalty=0.05, fType="quadratic", only_penalty=True)
         else:
             pbsnf4.populateMismatchMap(penalty=float(args[3]), fType=args[4], only_penalty=True)
         pbsnf4.exportMap(args[1])

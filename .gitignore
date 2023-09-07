@@ -8,3 +8,4 @@ logs/*
 *.inp
 files/*
 *.pyc
+*.sqlite3-journal

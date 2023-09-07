@@ -108,7 +108,7 @@ class BVDatabase:
                 symbol VARCHAR(2),
                 os INTEGER(1),
                 radii REAL,
-                softness REAL                     
+                softness REAL                   
             );
 
             CREATE TABLE BVParam (
@@ -177,9 +177,9 @@ class BVDatabase:
 
         return self.lastRowId()
     
-    def addInfo(self, paramId:int, cn:float, rCutoff:float):
+    def addInfoBV(self, paramId:int, cn:float, rCutoff:float):
         """
-            Updates the database entry to add information on the coordination number and radius cutoff, information which is only included in the softBV parameters.
+            Updates the bond valence parameters database entry to add information on the coordination number and radius cutoff, information which is only included in the softBV parameters.
         """
 
         self.execute("UPDATE BVParam SET cn = ?, r_cutoff = ? WHERE id = ?", (cn, rCutoff, paramId, ))
@@ -253,7 +253,7 @@ def datToDb(fileIn:str, fileOut:str):
             elif started:
                 row =  entry.split()
                 paramId = db.createEntry(row[0], int(row[1]), row[2], int(row[3]), float(row[4]), float(row[5]))
-                db.addInfo(paramId, float(row[6]), float(row[7]))
+                db.addInfoBV(paramId, float(row[6]), float(row[7]))
             elif entry == "DATA_START\n":
                 started = True
             else:

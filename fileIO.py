@@ -199,13 +199,15 @@ class BVDatabase:
         self.execute("UPDATE Ion SET radii = ?, softness = ?, period = ?, ggroup = ?, block = ? WHERE id = ?", (radii, softness, period, group, block, ionId))
 
     def rmin(self, softness1:float, softness2:float, r0:float, b:float, os:int, cn:float):
-        return (0.9185 + 0.2285*abs(softness1 - softness2))*r0 - b*np.log(os/cn)
+        x = (0.9185 + 0.2285 * abs(softness1 - softness2))*r0
+        y = b*np.log(abs(os)/cn)
+        return x - y
     
     def d0(self, b:float, os1:int, os2:int, block1:int, rmin:float, period1:int, period2:int):
         if block1 <= 1: c = 1
         else: c = 2 
 
-        return ((b**2)/2 * 14.4 * (c*(os1*os2)**(1/c)) / (rmin*np.sqrt(period1 * period2)))
+        return ((b**2)/2 * 14.4 * (c*(abs(os1*os2))**(1/c)) / (rmin*np.sqrt(period1 * period2)))
     
     def getParams(self, ion1:str|tuple, ion2:str|tuple, bvse:bool = False):
         """

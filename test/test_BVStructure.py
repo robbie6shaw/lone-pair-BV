@@ -17,6 +17,10 @@ class alteredTestCase(unittest.TestCase):
         self.assertEqual(array1.size, array2.size)
         for i in range(len(array1)):
             self.assertAlmostEqual(array1[i], array2[i])
+
+    def assertWithinBounds(self, num1:float, num2:float, bounds:float):
+        self.assertGreater(num1, num2 - bounds)
+        self.assertLess(num1, num2 + bounds)
         
 
 class TestSimpleBVStructure(alteredTestCase):

@@ -346,7 +346,6 @@ class BVStructure:
 
             logging.info(f"Completed plane {h} out of {self.voxelNumbers[0] - 1}")
 
-
     def deltaBV(self, value:float, ion:str):
         if ion == "F-" or ion == "Na+":
             result = abs(value - 1)

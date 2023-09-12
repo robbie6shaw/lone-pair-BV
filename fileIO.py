@@ -15,7 +15,7 @@ class core:
     RESULT_CONVERTER = lambda self, x: "1" if x == "" else x
     LONE_PAIR_ELEMENTS = ["Pb", "Sn", "Bi", "Sb", "Tl"]
     ion = collections.namedtuple("Ion", ["element", "os"])
-    bvparam = collections.namedtuple("BVParam", ['r0', 'ib', 'cn', 'r_cutoff', 'rmin', 'd0'])
+    bvparam = collections.namedtuple("BVParam", ['r0', 'ib', 'cn', 'r_cutoff', 'i1r', 'i2r', 'rmin', 'd0'])
 
     def interpretIon(self, ion):
             """
@@ -28,6 +28,12 @@ class core:
                 raise Exception(f"Cannot interpret ion ({ion}) sucessfully.")
             else:
                 return self.ion(element = result[1], os = int(result[3] + self.RESULT_CONVERTER(result[2])))
+    
+    def ion_to_str(self, ion:tuple|ion):
+        """
+            Takes an ion in a tuple format and returns it in string format.
+        """
+        return ion[0] + (str(abs(ion[1])) if abs(ion[1]) > 1 else "") + ("+" if ion[1] > 0 else "-")
             
     def hasLonePair(self, element:str):
 
@@ -110,11 +116,12 @@ class BVDatabase:
             CREATE TABLE Ion (
                 id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,
                 symbol VARCHAR(2),
+                atomic_no INT,
                 os INTEGER(1),
                 radii REAL,
                 softness REAL,
                 period INT,
-                ggroup INT,
+                p_group INT,
                 block INT                
             );
 
@@ -191,12 +198,12 @@ class BVDatabase:
 
         self.execute("UPDATE BVParam SET cn = ?, r_cutoff = ? WHERE id = ?", (cn, rCutoff, paramId, ))
 
-    def addInfoIon(self, ionId:int, radii:float, softness:float, period:int, group:int, block:int):
+    def addInfoIon(self, ionId:int, radii:float, softness:float, period:int, group:int, block:int, atomicNo:int):
         """
             Updates the ion database entry to add information on the radius, softness and principle quantum number, only included in the softBV parameters.
         """
 
-        self.execute("UPDATE Ion SET radii = ?, softness = ?, period = ?, ggroup = ?, block = ? WHERE id = ?", (radii, softness, period, group, block, ionId))
+        self.execute("UPDATE Ion SET radii = ?, softness = ?, period = ?, p_group = ?, block = ?, atomic_no = ? WHERE id = ?", (radii, softness, period, group, block, atomicNo, ionId))
 
     def rmin(self, softness1:float, softness2:float, r0:float, b:float, os:int, cn:float):
         x = (0.9185 + 0.2285 * abs(softness1 - softness2))*r0
@@ -234,9 +241,17 @@ class BVDatabase:
         if bvse:
             rmin = self.rmin(result[7], result[8], result[0], result[1], ion1.os, result[3])
             d0 = self.d0(result[1], ion1.os, ion2.os, result[11], rmin, result[9], result[10])
-            return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], rmin = rmin, d0 = d0)
+            return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], i1r = result[5], i2r = result[6], rmin = rmin, d0 = d0)
         else:
-            return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], rmin = None, d0 = None)
+            return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], i1r = None, i2r = None, rmin = None, d0 = None)
+        
+    def get_atomic_no(self, element:str):
+        """
+            Function to find the atomic number of a particular element, given the symbol.
+        """
+
+        self.execute("SELECT atomic_no FROM Ion WHERE symbol = ?", (element,))
+        return self.extractFetchone()
 
 
 def readCif(fileLocation:str):
@@ -310,7 +325,7 @@ def ionDatToDb(fileIn:str, fileOut:str):
             elif started:
                 row = entry.split()
                 ionId = db.getOrInsertIon(row[1], int(row[2]))
-                db.addInfoIon(ionId, float(row[8]), float(row[9]), int(row[5]), int(row[6]), int(row[7]))
+                db.addInfoIon(ionId, float(row[8]), float(row[9]), int(row[5]), int(row[6]), int(row[7]), int(row[0]))
             elif entry == "DATA_START\n":
                 started = True
             else:

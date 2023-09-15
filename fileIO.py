@@ -205,9 +205,9 @@ class BVDatabase:
 
         self.execute("UPDATE Ion SET radii = ?, softness = ?, period = ?, p_group = ?, block = ?, atomic_no = ? WHERE id = ?", (radii, softness, period, group, block, atomicNo, ionId))
 
-    def rmin(self, softness1:float, softness2:float, r0:float, b:float, os:int, cn:float):
+    def rmin(self, softness1:float, softness2:float, r0:float, b:float, osCation:int, cn:float):
         x = (0.9185 + 0.2285 * abs(softness1 - softness2))*r0
-        y = b*np.log(abs(os)/cn)
+        y = b*np.log(abs(osCation)/cn)
         return x - y
     
     def d0(self, b:float, os1:int, os2:int, block1:int, rmin:float, period1:int, period2:int):
@@ -239,7 +239,9 @@ class BVDatabase:
         result = result[0]
 
         if bvse:
-            rmin = self.rmin(result[7], result[8], result[0], result[1], ion1.os, result[3])
+            if ion1.os > 0: cationOs = ion1.os
+            else: cationOs = ion2.os
+            rmin = self.rmin(result[7], result[8], result[0], result[1], cationOs, result[3])
             d0 = self.d0(result[1], ion1.os, ion2.os, result[11], rmin, result[9], result[10])
             return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], i1r = result[5], i2r = result[6], rmin = rmin, d0 = d0)
         else:

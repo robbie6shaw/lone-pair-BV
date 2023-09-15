@@ -1,6 +1,3 @@
-from typing import Sequence
-from numpy.typing import ArrayLike
-import pymatgen.core as pmg
 import math, logging, sys
 import numpy as np
 import pandas as pd
@@ -11,11 +8,8 @@ class BVStructure:
 
     DB_LOCATION = "soft-bv-params.sqlite3"
     LONE_PAIR_STRENGTH_CUTOFF = 0.5 # The magnitude of the bond valence vector required for the program to decide that a lone pair dummy site is required
-    BOHR_IN_ANGSTROM = 0.5291772
-    CHARGE_CONVERSION = 0.594445
-    # LIN_PENALTY_CONSTANT = 0.08
-    # QUAD_PENALTY_CONSTANT = 0.1
-
+    BOHR_IN_ANGSTROM = 0.5291772 # Conversion factor between bohr radius and angstroms for generating cube files
+    CHARGE_CONVERSION = 0.594445 # Converts charge for cube files
     CORE = core()
 
     # --TESTED--

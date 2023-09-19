@@ -254,6 +254,13 @@ class BVDatabase:
 
         self.execute("SELECT atomic_no FROM Ion WHERE symbol = ?", (element,))
         return self.extractFetchone()
+    
+    def get_radius(self, element:str):
+        """
+            Function to find the ionic radius of a particular element, given the symbol
+        """
+        self.execute("SELECT radii FROM Ion WHERE symbol = ?", (element,))
+        return self.extractFetchone()
 
 
 def readCif(fileLocation:str):

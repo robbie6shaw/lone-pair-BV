@@ -1,4 +1,4 @@
-import math, logging, sys
+import math, logging, sys, os
 import numpy as np
 import pandas as pd
 from fileIO import *
@@ -10,6 +10,9 @@ class BVStructure:
     LONE_PAIR_STRENGTH_CUTOFF = 0.5 # The magnitude of the bond valence vector required for the program to decide that a lone pair dummy site is required
     BOHR_IN_ANGSTROM = 0.5291772 # Conversion factor between bohr radius and angstroms for generating cube files
     CHARGE_CONVERSION = 0.594445 # Converts charge for cube files
+    SCREENING_FACTOR = 0.75 # Factor for the ERFC
+    LONE_PAIR_RADIUS = 1
+
     CORE = core()
 
     # --TESTED--
@@ -359,10 +362,18 @@ class BVStructure:
 
             logging.info(f"Completed plane {h} out of {self.voxelNumbers[0] - 1}")
 
-    def populate_map_bvse(self):
+    def populate_map_bvse(self, mode = 1):
+        """
+            Populates the map with BVSE data. Mode Settings:
+                0 - Only Bonding Energy
+                1 - Bonding + Coulombic Energy
+                2 - Only Coulombic Energy
+        """
 
         # Removes all conducting ions from the structure
         selectedAtoms = self.bufferedSites[self.bufferedSites["element"] != self.conductor.element]
+
+        conductorRadius = self.db.get_radius(self.conductor.element)
 
         # For every voxel
         for h in range(self.voxelNumbers[0]):
@@ -389,16 +400,25 @@ class BVStructure:
 
                         elif (fixedIon["ox_state"] * self.conductor.os) < 0:
                         
-                            # If the seperation is less than 1 Å, set the BV value to very high value so the site is disregarded. This will cause the atom loop to be exited -> The site has a BV too high to be considered.
-                            if ri < 1:
-                                Ebond = 20
-                                break
+                            if mode < 2:
 
-                            # Otherwise, calculated the BV value and add it to the total
+                                # If the seperation is less than 1 Å, set the BV value to very high value so the site is disregarded. This will cause the atom loop to be exited -> The site has a BV too high to be considered.
+                                if ri < 1:
+                                    Ebond = 20
+                                    break
+
+                                # Otherwise, calculated the BV value and add it to the total
+                                else:
+                                    params = self.allBvParams[fixedIon["label"]]
+                                    Ebond += calc_Ebond(params.d0, params.rmin, ri, params.ib)
+
+                        elif mode > 0:
+
+                            if fixedIon["label"][:2] == "lp":
+                                Ecoul += calc_Ecoul(self.conductor.os, -2, ri, conductorRadius, self.LONE_PAIR_RADIUS, self.SCREENING_FACTOR)
                             else:
                                 params = self.allBvParams[fixedIon["label"]]
-                                Ebond += calc_Ebond(params.d0, params.rmin, ri, params.ib)
-                                Ecoul += calc_Ecoul(self.conductor.os, fixedIon["ox_state"], ri, params.i1r, params.i2r, 0.75)
+                                Ecoul += calc_Ecoul(self.conductor.os, fixedIon["ox_state"], ri, params.i1r, params.i2r, self.SCREENING_FACTOR) 
 
                         # elif penalty != 0 :
                         #     penaltySum += penF(-2, ri, penalty)
@@ -421,6 +441,19 @@ class BVStructure:
         """
             Exports the produced map to a file. The file name should end with the supported formats - either .grd or .cube.
         """
+
+        regex = re.compile("(.+)\.(.+?$)")
+        nameList = regex.search(fileName)
+
+        if os.path.isfile(fileName):
+            for i in range(100):
+                trialName = f"{nameList[1]}{i}.{nameList[2]}"
+                if not os.path.isfile(trialName):
+                    fileName = trialName
+                    break
+            
+            logging.info(f"File already exists - writing to file {fileName} instead")
+
         if fileName[-3:] == "grd":
             self._export_grd(fileName)
         elif fileName[-4:] == "cube":
@@ -610,7 +643,7 @@ def calc_Ebond(d0:float, rmin:float, ri:float, ib:float):
     return d0 * (np.exp((rmin - ri)*ib) -1 )**2 - d0
 
 def calc_Ecoul(q1, q2, ri:float, r1:float, r2:float, f:float):
-    return (q1 * q2)/ri * erfc(ri/(f*(r1 + r2)))
+    return (q1* q2)/ri * erfc(ri/(f*(r1 + r2)))
 
 def calc_distance(point1, point2):
     deltaX = point2[0] - point1[0]

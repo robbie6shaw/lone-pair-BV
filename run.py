@@ -50,13 +50,18 @@ def only_penalty(args:list):
 
 def bvse(args:list):
 
-    if len(args) == 3:
+    if len(args) == 4:
+        args[3] = int(args[3])
+        if args[3] not in [0, 1, 2]: raise Exception(f"Mode can be set to 0, 1 or 2; was set to {args[3]}")
+
         pbsnf4 = BVStructure.from_file(args[0], bvse=True)
         pbsnf4.initalise_map(float(args[2]))
-        pbsnf4.populate_map_bvse()
+        if args[3] > 0:
+            pbsnf4.create_lone_pairs()
+        pbsnf4.populate_map_bvse(mode = args[3])
         pbsnf4.export_map(args[1])
     else:
-        raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution'")
+        raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution', 'mode'")
 
 def site_bvs(args:list):
     if len(args) == 2:
@@ -67,22 +72,29 @@ def site_bvs(args:list):
         for site in structure.sites.itertuples():
             print(f"Site {site.Index} at {site.coords} = {structure.find_site_bvs(site.Index, bool(int(args[1])))}")
 
-def bulk_bvsmp(args:list):
+def bulk(args:list):
 
     with open(args[0]) as f:
-        for line in f.readlines():
-            structure = BVStructure.from_file(line.strip())
-            structure.initalise_map(0.2)
-            structure.create_lone_pairs()
-            structure.export_cif(f"{line.strip()[:-4]}-lp.cif")
+        for i, line in enumerate(f.readlines()):
 
-            for k in [0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.12, 0.14, 0.16]:
-                for t in ["l", "q"]:
-            # for k in [0.08]:
-            #     for t in ["l"]:
-                    structure.populate_map_bvsm(penalty=k, fType=t)
-                    structure.export_map(f"{line.strip()[:-4]}-{k}{t}.grd")
-                    structure.reset_map()
+            if i == 0:
+                mode = line.strip()
+                if mode not in ["bvsm", "bvse"]:
+                    logging.error("Unrecognised mode of operation. Quitting")
+                    sys.exit()
+            else:
+                structure = BVStructure.from_file(line.strip())
+
+                structure.initalise_map(0.15)
+                structure.create_lone_pairs()
+                structure.export_cif(f"{line.strip()[:-4]}-lp.cif")
+
+                if mode == "bvsm":
+                    structure.populate_map_bvsm()
+                elif mode == "bvse":
+                    structure.populate_map_bvse()
+                structure.export_map(f"{line.strip()[:-4]}-{mode}.cube")
+                structure.reset_map()
 
 def render(args:list):
 
@@ -158,7 +170,7 @@ else:
 
     #analyse(["cif-files/bulk-bvsm/PbSnF4-0.08l.grd", 0.1])  
     # bvs(["files/pbsnf4.inp", "files/temp.grd", 1])
-    bvse(['results/PbF2-beta/PbF2.inp', 'results/PbF2-beta/PbF2-test.cube', '0.2'])
+    bvse(['results/PbSnF4/PbSnF4.inp', 'results/PbSnF4/PbSnF4-test.cube', '1', '1'])
     # render(["cif-files/bulk-bvsm/KSn2F5.inp","cif-files/bulk-bvsm/KSn2F5-gen.cif"])
     # create_input(["cif-files/ternary-fluorides/EntryWithCollCode152949 (PbSnF4).cif", "files/pbsnf4.inp", "F-"])
 

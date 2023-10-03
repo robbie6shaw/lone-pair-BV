@@ -10,7 +10,7 @@ def create_input(args:list):
     else:
         raise Exception(f"Method create_input requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'conductor'")
 
-def bvs(args:list):
+def bvsm(args:list):
 
     if len(args) == 3:
         pbsnf4 = BVStructure.from_file(args[0])
@@ -20,7 +20,7 @@ def bvs(args:list):
     else:
         raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution'")
     
-def bvs_penalty(args:list):
+def bvsm_penalty(args:list):
 
     if len(args) == 3 or len(args) == 5:
         pbsnf4 = BVStructure.from_file(args[0])
@@ -76,25 +76,30 @@ def bulk(args:list):
 
     with open(args[0]) as f:
         for i, line in enumerate(f.readlines()):
+            try:
 
-            if i == 0:
-                mode = line.strip()
-                if mode not in ["bvsm", "bvse"]:
-                    logging.error("Unrecognised mode of operation. Quitting")
-                    sys.exit()
-            else:
-                structure = BVStructure.from_file(line.strip())
+                if i == 0:
+                    mode = line.strip()
+                    if mode not in ["bvsm", "bvse"]:
+                        logging.error("Unrecognised mode of operation. Quitting")
+                        sys.exit()
+                else:
+                    structure = BVStructure.from_file(line.strip(), bvse = (mode == "bvse"))
 
-                structure.initalise_map(0.15)
-                structure.create_lone_pairs()
-                structure.export_cif(f"{line.strip()[:-4]}-lp.cif")
+                    structure.initalise_map(0.15)
+                    structure.create_lone_pairs()
+                    structure.export_cif(f"{line.strip()[:-4]}-lp.cif")
 
-                if mode == "bvsm":
-                    structure.populate_map_bvsm()
-                elif mode == "bvse":
-                    structure.populate_map_bvse()
-                structure.export_map(f"{line.strip()[:-4]}-{mode}.cube")
-                structure.reset_map()
+                    if mode == "bvsm":
+                        structure.populate_map_bvsm()
+                    elif mode == "bvse":
+                        structure.populate_map_bvse()
+                    structure.export_map(f"{line.strip()[:-4]}-{mode}.cube")
+                    structure.reset_map()
+            except:
+                e = sys.exc_info()[0]
+                logging.error(f"Caught Exception for {line}: {e}")
+
 
 def render(args:list):
 

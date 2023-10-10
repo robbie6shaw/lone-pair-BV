@@ -33,12 +33,53 @@ class core:
         """
             Takes an ion in a tuple format and returns it in string format.
         """
-        return ion[0] + (str(abs(ion[1])) if abs(ion[1]) > 1 else "") + ("+" if ion[1] > 0 else "-")
+        os = int(ion[1])
+        return ion[0] + (str(abs(os)) if abs(os) > 1 else "") + ("+" if os > 0 else "-")
             
     def hasLonePair(self, element:str):
 
         return element in self.LONE_PAIR_ELEMENTS
             
+
+class Ion:
+
+    ION_REGEX = re.compile("([A-Za-z]{,2})(\d*)(\+|-)")
+    LONE_PAIR_ELEMENTS = ["Pb", "Sn", "Bi", "Sb", "Tl"]
+    one_reducer = lambda self, x: "1" if x == "" else x
+
+    def __init__(self, element:str, ox_state:int):
+
+        if isinstance(element, str):
+            self.element = element
+        else:
+            raise TypeError("The element field of an Ion should be a string")
+        
+        self.ox_state = int(ox_state)
+        self.string = element + (str(abs(ox_state)) if abs(ox_state) > 1 else "") + ("+" if ox_state > 0 else "-")
+
+    def __str__(self):
+        return self.string
+    
+    def __eq__(self, other):
+        if isinstance(other, Ion):
+            return self.element == other.element and self.ox_state == other.ox_state
+        elif isinstance(other, str):
+            other = Ion.from_string(other)
+            return self.element == other.element and self.ox_state == other.ox_state
+        else:
+            return False
+
+    @classmethod
+    def from_string(cls, ion_string:str):
+        result = cls.ION_REGEX.search(ion_string)
+        
+        if result is None:
+            raise Exception(f"Cannot interpret the ion string sucessfully - {ion_string}")
+        else:
+            return Ion(element = result[1], os = int(result[3] + cls.one_reducer(result[2])))
+        
+    def possible_lone_pair(self):
+        return self.element in self.LONE_PAIR_ELEMENTS
 
 ## DATABASE CLASS
 
@@ -162,27 +203,27 @@ class BVDatabase:
         # Creates the new database
         self.createDatabase()
 
-    def getOrInsertIon(self, ion:str, os:int):
+    def getOrInsertIon(self, ion:Ion):
         """
             Method that tries to find an ion in the database. If it is not found, a new database entry is added for that ion. In any case, the id of the ion's entry is returned.
         """
 
-        self.execute("SELECT id FROM Ion WHERE symbol = ? AND os = ?", (ion, os, ))
+        self.execute("SELECT id FROM Ion WHERE symbol = ? AND os = ?", (ion.element, ion.ox_state, ))
 
         ans = self.extractFetchone()
         if ans == None:
-            self.execute("INSERT OR IGNORE INTO Ion (symbol, os) VALUES (?,?)", (ion, os, ))
+            self.execute("INSERT OR IGNORE INTO Ion (symbol, os) VALUES (?,?)", (ion.element, ion.ox_state, ))
             return self.lastRowId()
         else:
             return ans
 
-    def createEntry(self, ion1:str, os1:int, ion2:str, os2:int, r0:float, b:float):
+    def createEntry(self, ion1:Ion, ion2:Ion, r0:float, b:float):
         """
             Creates a database entry for a BV parameter set. Only basic information, included in Brown's cif files is set in this method.
         """
 
-        ion1Id = self.getOrInsertIon(ion1, os1)
-        ion2Id = self.getOrInsertIon(ion2, os2)
+        ion1Id = self.getOrInsertIon(ion1)
+        ion2Id = self.getOrInsertIon(ion2)
 
         self.execute("SELECT id FROM BVParam WHERE ion1=? AND ion2=?", (ion1Id, ion2Id))
         if self.extractFetchone() == None:
@@ -216,36 +257,50 @@ class BVDatabase:
 
         return ((b**2)/2 * 14.4 * (c*(abs(os1*os2))**(1/c)) / (rmin*np.sqrt(period1 * period2)))
     
-    def getParams(self, ion1:str|tuple, ion2:str|tuple, bvse:bool = False):
-        """
-            Finds the parameters for a combination of two ions and returns them. The input ions should be in the format of Symbol-OS Digit-Sign.
-
-            Returns a tuple of (r0, ib)
-        """
-        if isinstance(ion1, str):
-            ion1 = self.CORE.interpretIon(ion1)
-        if isinstance(ion2, str):
-            ion2 = self.CORE.interpretIon(ion2)
-        
-        #                    0   1  2   3   4         5         6         7            8            9          10         11        12
-        self.execute("SELECT r0, b, ib, cn, r_cutoff, i1.radii, i2.radii, i1.softness, i2.softness, i1.period, i2.period, i1.block, i2.block FROM BVParam JOIN Ion i1 JOIN Ion i2 On BVParam.ion1 = i1.id AND BVParam.ion2 = i2.id WHERE (i1.symbol = ? AND i1.os = ? AND i2.symbol = ? AND i2.os = ?) OR (i2.symbol = ? AND i2.os = ? AND i1.symbol = ? AND i1.os = ?)", (ion1[0], int(ion1[1]), ion2[0], int(ion2[1]), ion1[0], int(ion1[1]), ion2[0], int(ion2[1]),))
-
+    def _params_error_check(self, ion1:Ion, ion2:Ion):
         result = self.fetchall()
         if result is None or len(result) == 0:
             raise Exception(f"The combination of ions ({ion1}, {ion2}) are not on the BV Parameters Database")
         elif len(result) != 1:
             logging.warn(f"Multiple different database entries for the same ions ({ion1}, {ion2})")
-        
-        result = result[0]
+        return result[0]
 
-        if bvse:
-            if ion1.os > 0: cationOs = ion1.os
-            else: cationOs = ion2.os
-            rmin = self.rmin(result[7], result[8], result[0], result[1], cationOs, result[3])
-            d0 = self.d0(result[1], ion1.os, ion2.os, result[11], rmin, result[9], result[10])
-            return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], i1r = result[5], i2r = result[6], rmin = rmin, d0 = d0)
+    def getParams(self, ion1:Ion, ion2:Ion, bvse:bool = False):
+        """
+            Finds the parameters for a combination of two ions and returns them. The input ions should be in the format of Symbol-OS Digit-Sign.
+
+            Returns a tuple of (r0, ib)
+        """
+        
+        if (ion1.ox_state * ion2.ox_state) < 0:
+            #                    0   1  2   3   4         5         6         7            8            9          10         11        12
+            self.execute("SELECT r0, b, ib, cn, r_cutoff, i1.radii, i2.radii, i1.softness, i2.softness, i1.period, i2.period, i1.block, i2.block FROM BVParam JOIN Ion i1 JOIN Ion i2 On BVParam.ion1 = i1.id AND BVParam.ion2 = i2.id WHERE (i1.symbol = ? AND i1.os = ? AND i2.symbol = ? AND i2.os = ?) OR (i2.symbol = ? AND i2.os = ? AND i1.symbol = ? AND i1.os = ?)", (ion1.element, ion1.ox_state, ion2.element, ion2.ox_state, ion1.element, ion1.ox_state, ion2.element, ion2.ox_state,))
+
+            result = self.fetchall()
+            if result is None or len(result) == 0:
+                raise Exception(f"The combination of ions ({ion1}, {ion2}) are not on the BV Parameters Database")
+            elif len(result) != 1:
+                logging.warn(f"Multiple different database entries for the same ions ({ion1}, {ion2})")
+            
+            result = self._params_error_check(ion1, ion2)
+
+            if bvse:
+                if ion1.os > 0: cationOs = ion1.os
+                else: cationOs = ion2.os
+                rmin = self.rmin(result[7], result[8], result[0], result[1], cationOs, result[3])
+                d0 = self.d0(result[1], ion1.os, ion2.os, result[11], rmin, result[9], result[10])
+                return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], i1r = result[5], i2r = result[6], rmin = rmin, d0 = d0)
+            else:
+                return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], i1r = None, i2r = None, rmin = None, d0 = None)
+        elif bvse:
+            self.execute("SELECT i1.radii, i2.radii FROM Ion i1 JOIN Ion i2 WHERE (i1.symbol = ? AND i1.os = ?) OR (i2.symbol = ? AND i2.ion = ?)", ion1[0], int(ion1[1]), ion2[0], int(ion2[2]))
+
+            result = self._params_error_check(ion1, ion2)
+
+            return core.bvparam(r0=None, ib=None, cn=None, r_cutoff=None, i1r=result[0], i2r=result[1], rmin=None, d0=None)
         else:
-            return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], i1r = None, i2r = None, rmin = None, d0 = None)
+            return None
+
         
     def get_atomic_no(self, element:str):
         """
@@ -255,11 +310,11 @@ class BVDatabase:
         self.execute("SELECT atomic_no FROM Ion WHERE symbol = ?", (element,))
         return self.extractFetchone()
     
-    def get_radius(self, element:str):
+    def get_radius(self, ion:Ion):
         """
             Function to find the ionic radius of a particular element, given the symbol
         """
-        self.execute("SELECT radii FROM Ion WHERE symbol = ?", (element,))
+        self.execute("SELECT radii FROM Ion WHERE symbol = ? AND os = ?", (ion.element, ion.ox_state, ))
         return self.extractFetchone()
 
 
@@ -333,7 +388,7 @@ def ionDatToDb(fileIn:str, fileOut:str):
                 break
             elif started:
                 row = entry.split()
-                ionId = db.getOrInsertIon(row[1], int(row[2]))
+                ionId = db.getOrInsertIon(Ion(row[1], int(row[2])))
                 db.addInfoIon(ionId, float(row[8]), float(row[9]), int(row[5]), int(row[6]), int(row[7]), int(row[0]))
             elif entry == "DATA_START\n":
                 started = True
@@ -349,7 +404,7 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
 
     # Create a pymatgen object
     struct = pmg.Structure.from_file(fileIn)
-    conductor = CORE.interpretIon(conductor)
+    conductor = Ion.from_string(conductor)
 
     if fileIn[-4:] != ".cif":
         logging.error(f"Incorrect file format. The input file should be a cif file and not a {fileIn[-3:]} file")

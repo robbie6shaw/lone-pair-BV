@@ -62,6 +62,21 @@ def bvse(args:list):
         pbsnf4.export_map(args[1])
     else:
         raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution', 'mode'")
+    
+def bvse_jit(args:list):
+
+    if len(args) == 4:
+        args[3] = int(args[3])
+        if args[3] not in [0, 1, 2]: raise Exception(f"Mode can be set to 0, 1 or 2; was set to {args[3]}")
+
+        pbsnf4 = BVStructure.from_file(args[0], bvse=True)
+        pbsnf4.initalise_map(float(args[2]))
+        if args[3] > 0:
+            pbsnf4.create_lone_pairs()
+        pbsnf4.populate_map_bvse_jit(mode = args[3])
+        pbsnf4.export_map(args[1])
+    else:
+        raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution', 'mode'")
 
 def site_bvs(args:list):
     if len(args) == 2:
@@ -175,7 +190,7 @@ else:
 
     #analyse(["cif-files/bulk-bvsm/PbSnF4-0.08l.grd", 0.1])  
     # bvs(["files/pbsnf4.inp", "files/temp.grd", 1])
-    bvse(['results/PbSnF4/PbSnF4.inp', 'results/PbSnF4/PbSnF4-test.cube', '1', '1'])
+    bvse_jit(['results/PbSnF4/PbSnF4.inp', 'results/PbSnF4/PbSnF4-test.cube', '1', '1'])
     # render(["cif-files/bulk-bvsm/KSn2F5.inp","cif-files/bulk-bvsm/KSn2F5-gen.cif"])
     # create_input(["cif-files/ternary-fluorides/EntryWithCollCode152949 (PbSnF4).cif", "files/pbsnf4.inp", "F-"])
 

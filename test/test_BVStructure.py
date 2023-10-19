@@ -53,9 +53,9 @@ class TestSimpleBVStructure(alteredTestCase):
         self.assertFalse(self.obj.sites.loc["F1-0"]["lp"])
 
     def test_get_bv_params(self):
-        self.assertIsInstance(self.obj.bvParams, dict)
-        self.assertEqual(len(self.obj.bvParams), 1)
-        self.assertEqual(self.obj.bvParams["Pb1"][0], 1.90916)
+        self.assertIsInstance(self.obj.allBvParams, dict)
+        self.assertEqual(len(self.obj.allBvParams), 1)
+        self.assertEqual(self.obj.allBvParams["Pb1"][0], 1.90916)
         self.assertAlmostEqual(self.obj.rCutoff, 6)
 
     def test_buffer_area(self):

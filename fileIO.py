@@ -17,24 +17,24 @@ class core:
     ion = collections.namedtuple("Ion", ["element", "os"])
     bvparam = collections.namedtuple("BVParam", ['r0', 'ib', 'cn', 'r_cutoff', 'i1r', 'i2r', 'rmin', 'd0'])
 
-    def interpretIon(self, ion):
-            """
-                Interprets an ion in string format. The ion must be of format Symbol-OS Digit-Sign, otherwise the interpretation will not work.
+    # def interpretIon(self, ion):
+    #         """
+    #             Interprets an ion in string format. The ion must be of format Symbol-OS Digit-Sign, otherwise the interpretation will not work.
 
-                Returns a tuple of (element, oxidation_state)
-            """
-            result = self.ION_REGEX.search(ion)
-            if result is None:
-                raise Exception(f"Cannot interpret ion ({ion}) sucessfully.")
-            else:
-                return self.ion(element = result[1], os = int(result[3] + self.RESULT_CONVERTER(result[2])))
+    #             Returns a tuple of (element, oxidation_state)
+    #         """
+    #         result = self.ION_REGEX.search(ion)
+    #         if result is None:
+    #             raise Exception(f"Cannot interpret ion ({ion}) sucessfully.")
+    #         else:
+    #             return self.ion(element = result[1], os = int(result[3] + self.RESULT_CONVERTER(result[2])))
     
-    def ion_to_str(self, ion:tuple|ion):
-        """
-            Takes an ion in a tuple format and returns it in string format.
-        """
-        os = int(ion[1])
-        return ion[0] + (str(abs(os)) if abs(os) > 1 else "") + ("+" if os > 0 else "-")
+    # def ion_to_str(self, ion:tuple|ion):
+    #     """
+    #         Takes an ion in a tuple format and returns it in string format.
+    #     """
+    #     os = int(ion[1])
+    #     return ion[0] + (str(abs(os)) if abs(os) > 1 else "") + ("+" if os > 0 else "-")
             
     def hasLonePair(self, element:str):
 
@@ -55,7 +55,8 @@ class Ion:
             raise TypeError("The element field of an Ion should be a string")
         
         self.ox_state = int(ox_state)
-        self.string = element + (str(abs(ox_state)) if abs(ox_state) > 1 else "") + ("+" if ox_state > 0 else "-")
+        self.string = self.element + (str(abs(self.ox_state)) if abs(self.ox_state) > 1 else "") + ("+" if self.ox_state > 0 else "-")
+        self.radius = None
 
     def __str__(self):
         return self.string
@@ -68,6 +69,9 @@ class Ion:
             return self.element == other.element and self.ox_state == other.ox_state
         else:
             return False
+        
+    def __hash__(self):
+        return hash((self.element, self.ox_state))
 
     @classmethod
     def from_string(cls, ion_string:str):
@@ -275,23 +279,18 @@ class BVDatabase:
         if (ion1.ox_state * ion2.ox_state) < 0:
             #                    0   1  2   3   4         5         6         7            8            9          10         11        12
             self.execute("SELECT r0, b, ib, cn, r_cutoff, i1.radii, i2.radii, i1.softness, i2.softness, i1.period, i2.period, i1.block, i2.block FROM BVParam JOIN Ion i1 JOIN Ion i2 On BVParam.ion1 = i1.id AND BVParam.ion2 = i2.id WHERE (i1.symbol = ? AND i1.os = ? AND i2.symbol = ? AND i2.os = ?) OR (i2.symbol = ? AND i2.os = ? AND i1.symbol = ? AND i1.os = ?)", (ion1.element, ion1.ox_state, ion2.element, ion2.ox_state, ion1.element, ion1.ox_state, ion2.element, ion2.ox_state,))
-
-            result = self.fetchall()
-            if result is None or len(result) == 0:
-                raise Exception(f"The combination of ions ({ion1}, {ion2}) are not on the BV Parameters Database")
-            elif len(result) != 1:
-                logging.warn(f"Multiple different database entries for the same ions ({ion1}, {ion2})")
             
             result = self._params_error_check(ion1, ion2)
 
             if bvse:
-                if ion1.os > 0: cationOs = ion1.os
-                else: cationOs = ion2.os
+                if ion1.ox_state > 0: cationOs = ion1.ox_state
+                else: cationOs = ion2.ox_state
                 rmin = self.rmin(result[7], result[8], result[0], result[1], cationOs, result[3])
-                d0 = self.d0(result[1], ion1.os, ion2.os, result[11], rmin, result[9], result[10])
+                d0 = self.d0(result[1], ion1.ox_state, ion2.ox_state, result[11], rmin, result[9], result[10])
                 return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], i1r = result[5], i2r = result[6], rmin = rmin, d0 = d0)
             else:
                 return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], i1r = None, i2r = None, rmin = None, d0 = None)
+            
         elif bvse:
             self.execute("SELECT i1.radii, i2.radii FROM Ion i1 JOIN Ion i2 WHERE (i1.symbol = ? AND i1.os = ?) OR (i2.symbol = ? AND i2.ion = ?)", ion1[0], int(ion1[1]), ion2[0], int(ion2[2]))
 
@@ -415,7 +414,7 @@ def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
     with open(fileOut, "w") as f:
 
         # Give information on conductor choice and the lattice
-        f.write(f"{conductor.element}\t{conductor.os}\n")
+        f.write(f"{conductor.element}\t{conductor.ox_state}\n")
         f.write(f"{struct.lattice.a}\t{struct.lattice.b}\t{struct.lattice.c}\t{struct.lattice.alpha}\t{struct.lattice.beta}\t{struct.lattice.gamma}\n")
         f.write(f"{struct.lattice.volume}\n")
         for i in range(3):

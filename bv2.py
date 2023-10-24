@@ -4,7 +4,7 @@ import pandas as pd
 from fileIO import *
 import scipy.special as ss
 from line_profiler import profile
-from numba import njit
+from numba import njit, float64
 from numba.core import types
 from numba.typed import Dict
 
@@ -33,7 +33,7 @@ class BVStructure:
         self.rCutoff = 6
 
         # Extract header data from the input file
-        self.conductor = Ion(element = lines[0].split("\t")[0], os = int(lines[0].split("\t")[1]))
+        self.conductor = Ion(element = lines[0].split("\t")[0], ox_state = int(lines[0].split("\t")[1]))
         self.params = tuple(map(float, lines[1].split("\t")))
         extraParams = lines[2].split("\t")
         self.volume = float(extraParams[0])
@@ -47,18 +47,18 @@ class BVStructure:
         self.inverseVectors = np.linalg.inv(self.vectors)
 
         # Setup the sites dataframe
-        self.sites = pd.DataFrame(columns=["label","ion","lp","coords"])
+        self.sites = pd.DataFrame(columns=["label","ion","ox_state","lp","coords"])
 
         # Fill the sites dataframe
         for i in range(7, len(lines)):
             data = lines[i].split("\t")
-            self.sites.loc[data[1]] = [data[0], Ion(data[2], round(float(data[3]))), bool(int(data[4])), np.array((float(data[5]), float(data[6]), float(data[7])))]
+            self.sites.loc[data[1]] = [data[0], Ion(data[2], round(float(data[3]))), round(float(data[3])), bool(int(data[4])), np.array((float(data[5]), float(data[6]), float(data[7])))]
 
         logging.debug(self.sites)
 
         # Get the needed bond valence parameters from the database
         self.db = BVDatabase(self.DB_LOCATION)
-        self.bvParams = self.get_bv_params(self.conductor, bvse)
+        self.bvParams = self.get_param_dict(self.conductor, bvse)
         
 
     # --TESTED--
@@ -116,7 +116,7 @@ class BVStructure:
         return (start <= point).all() and (point <= end).all()
     
     # --TESTED--
-    def get_bv_params(self, inputIon, bvse = False):
+    def get_param_dict(self, inputIon:Ion, bvse = False):
         """
             Method that fetches bond valence parameters for all species in the structure and the specified ion. This method populates the bvParams dictionary and sets a cutoff radius using the values stored in the database.
         """
@@ -136,11 +136,14 @@ class BVStructure:
         self.rCutoff = maxCutoff
         return bvParams
 
-    def conductor_bv_param(self, ion:Ion):
+    def get_bv_param(self, ion1:Ion, ion2:Ion):
         try:
-            return self.bvParams[f"{self.conductor}.{ion}"]
+            return self.bvParams[f"{ion1}.{ion2}"]
         except KeyError:
-            return self.bvParams[f"{ion}.{self.conductor}"]
+            return self.bvParams[f"{ion2}.{ion1}"]
+        
+    def conductor_bv_param(self, ion:Ion):
+        return self.get_bv_param(self.conductor, ion)
 
     def define_buffer_area(self):
         """
@@ -173,7 +176,7 @@ class BVStructure:
         """
 
         # Create a copy of the sites dataframe to add to
-        self.bufferedSites = pd.DataFrame(columns=["label","element","ox_state","lp","coords"])
+        self.bufferedSites = pd.DataFrame(columns=["label","ion","ox_state","lp","coords"])
 
         # For every site in the core cell
         for site in self.sites.itertuples():
@@ -190,7 +193,7 @@ class BVStructure:
                         
                         # If the site is outwith the required area, disregard it
                         if self.inside_space(self.reqFracStart, self.reqFracEnd, self._frac_from_cart(newCoord)):
-                            self.bufferedSites.loc[f"{site.Index}({h}{k}{l})"] = [site.label, site.ion, site.lp, newCoord]
+                            self.bufferedSites.loc[f"{site.Index}({h}{k}{l})"] = [site.label, site.ion, site.ox_state, site.lp, newCoord]
 
         logging.debug("Buffered sites have been generated:")
         logging.debug(self.bufferedSites)
@@ -216,7 +219,6 @@ class BVStructure:
         """
               
         return np.sum((shift / self.voxelNumbers).reshape(3,1) * self.vectors, axis=0)
-
     
     def calc_distance(self, point1, point2):
         """
@@ -264,7 +266,7 @@ class BVStructure:
         """
 
         # Removes all anions/cations from the structure
-        selectedAtoms = self.bufferedSites[self.bufferedSites["ion"].ox_state * self.conductor.ox_state < 0]
+        selectedAtoms = self.bufferedSites[self.bufferedSites["ox_state"] * self.conductor.ox_state < 0]
 
         # For every voxel
         for h in range(self.voxelNumbers[0]):
@@ -304,10 +306,10 @@ class BVStructure:
             logging.info(f"Completed plane {h} out of {self.voxelNumbers[0] - 1}")
 
     def _linear_penalty(self, charge:int, distance:float, penaltyK:float):
-        return penaltyK * (self.conductor.os * charge)*(1/distance - 1/self.rCutoff)
+        return penaltyK * (self.conductor.ox_state * charge)*(1/distance - 1/self.rCutoff)
     
     def _quadratic_penalty(self, charge:int, distance:float, penaltyK:float):
-        return penaltyK * (self.conductor.os * charge)*(1/distance**2 - 1/(self.rCutoff**2))
+        return penaltyK * (self.conductor.ox_state * charge)*(1/distance**2 - 1/(self.rCutoff**2))
 
     def populate_map_bvsm(self, penalty:float = 0, fType:str = "linear", only_penalty:bool = False):
         """
@@ -405,7 +407,7 @@ class BVStructure:
                         if ri > self.rCutoff:
                             continue
 
-                        elif (ionSite["ion"].ox_state * self.conductor.ox_state) < 0:
+                        elif (ionSite["ox_state"] * self.conductor.ox_state) < 0:
                         
                             if mode < 2:
 
@@ -416,7 +418,7 @@ class BVStructure:
 
                                 # Otherwise, calculated the BV value and add it to the total
                                 else:
-                                    params = self.bvParams[self.conductor_bv_param(ionSite["ion"])]
+                                    params = self.conductor_bv_param(ionSite["ion"])
                                     Ebond += calc_Ebond(params.d0, params.rmin, ri, params.ib)
 
                         elif mode > 0:
@@ -449,45 +451,54 @@ class BVStructure:
         """
 
         # Removes all conducting ions from the structure
-        selectedAtoms = self.bufferedSites[self.bufferedSites["ion"] != self.conductor]
+        selectedSites = self.bufferedSites[self.bufferedSites["ion"] != self.conductor]
 
-        bondIons = self._create_bond_ion_array(selectedAtoms)
-        coulIons = self._create_coul_ion_array(selectedAtoms)
+        bondIons = self._create_bond_site_array(selectedSites)
+        coulIons = self._create_coul_site_array(selectedSites)
+
+        self.map = bvse_map(self.voxelNumbers, self.vectors, self.rCutoff, mode, self.SCREENING_FACTOR, bondIons, coulIons, self.map)
 
         # For every voxel
-        for h in range(self.voxelNumbers[0]):
-            for k in range(self.voxelNumbers[1]):
-                for l in range(self.voxelNumbers[2]):
+        # for h in range(self.voxelNumbers[0]):
+        #     for k in range(self.voxelNumbers[1]):
+        #         for l in range(self.voxelNumbers[2]):
 
-                    # Calculate the voxels cartesian coordinates
-                    pos = self.calc_voxel_cartesian(np.array((h,k,l)))
+        #             self.map[h][k][l] = voxel_bvse(np.array((h,k,l)), self.voxelNumbers, self.vectors, self.rCutoff, mode, self.SCREENING_FACTOR, bondIons, coulIons)
 
-                    self.map[h][k][l] = voxel_bvse(pos, self.rCutoff, mode, self.SCREENING_FACTOR, bondIons, coulIons)
+        #     logging.info(f"Completed plane {h} out of {self.voxelNumbers[0] - 1}")
 
-            logging.info(f"Completed plane {h} out of {self.voxelNumbers[0] - 1}")
-
-    def _create_bond_ion_array(self, selectedAtoms):
-        selectedAtoms = selectedAtoms[(selectedAtoms["ion"].ox_state * self.conductor.ox_state) < 0]
+    def _create_bond_site_array(self, selectedSites):
+        selectedSites = selectedSites[(selectedSites["ox_state"] * self.conductor.ox_state) < 0]
         outList = []
-        for ion in selectedAtoms:
-            ionInfo = ion["coords"].copy()
-            params = self.bvParams[self.conductor_bv_param(ion)]
-            ionInfo.append(params.d0)
-            ionInfo.append(params.rmin)
-            ionInfo.append(params.ib)
-            outList.append(ionInfo)
+        for i, site in selectedSites.iterrows():
+            siteInfo = np.zeros(6)
+            siteInfo[0:3] = site["coords"].copy()
+            params = self.conductor_bv_param(site["ion"])
+            siteInfo[3] = params.d0
+            siteInfo[4] = params.rmin
+            siteInfo[5] = params.ib
+            outList.append(siteInfo)
         return np.array(outList)
     
-    def _create_coul_ion_array(self, selectedAtoms):
-        selectedAtoms = selectedAtoms[(selectedAtoms["ion"].ox_state * self.conductor.ox_state) > 0]
+    def _create_coul_site_array(self, selectedSites):
+        selectedSites = selectedSites[(selectedSites["ox_state"] * self.conductor.ox_state) > 0]
+        conductorRadius = self.db.get_radius(self.conductor)
         outList = []
-        for ion in selectedAtoms:
-            ionInfo = ion["coords"].copy()
-            params = self.bvParams[self.conductor_bv_param(ion)]
-            ionInfo.append(self.conductor.ox_state)
-            ionInfo.append(ion["ox_state"])
-            ionInfo.append(params.i1r)
-            ionInfo.append(params.i2r)
+        for i, site in selectedSites.iterrows():
+            siteInfo = np.zeros(7)
+            siteInfo[0:3] = site["coords"].copy()
+            if site["ion"].element != "LP":
+                params = self.conductor_bv_param(site["ion"])
+                siteInfo[3] = self.conductor.ox_state
+                siteInfo[4] = site["ion"].ox_state
+                siteInfo[5] = params.i1r
+                siteInfo[6] = params.i2r
+            else:
+                siteInfo[3] = self.conductor.ox_state
+                siteInfo[4] = site["ion"].ox_state
+                siteInfo[5] = conductorRadius
+                siteInfo[6] = self.LONE_PAIR_RADIUS
+            outList.append(siteInfo)
         return np.array(outList)
 
     def _delta_bv(self, value:float, ion:str):
@@ -527,8 +538,8 @@ class BVStructure:
 
         with open(fileName, 'w') as file:
 
-            for atom in self.sites.groupby("ion").size().items():
-                file.write("%s:%i" % (atom[0]))
+            for ion in self.sites.groupby("ion", sort=False).size().items():
+                file.write(ion.__str__())
             file.write("    Conducting:%s\n" % (self.conductor.element))
 
             file.write("%f %f %f %f %f %f\n" % self.params)
@@ -546,11 +557,11 @@ class BVStructure:
             total = 0
             elementDict = {}
 
-            for atom in self.sites.groupby(["ion"]).size().items():
-                file.write("%s:%i " % (atom[0]))
-                total += atom[1]
-                elementDict[atom[0][0]] = self.db.get_atomic_no(atom[0][0])
-            file.write("\nConducting = %s ; sf = 0.750000;\n" % (self.CORE.ion_to_str(self.conductor)))
+            for ion in self.sites.groupby("ion", sort=False).size().items():
+                file.write(ion.__str__())
+                total += ion[1]
+                elementDict[ion[0].element] = self.db.get_atomic_no(ion[0].element)
+            file.write("\nConducting = %s ; sf = 0.750000;\n" % (self.conductor.__str__()))
 
             file.write("%i  0.000000   0.000000   0.000000\n" % (total))
 
@@ -559,7 +570,7 @@ class BVStructure:
                 file.write("%i  %7.6f   %7.6f   %7.6f\n" % ((self.voxelNumbers[i],) + tuple(voxelVector)))
 
             for site in self.sites.itertuples():
-                file.write("%i %7.6f    %7.6f   %7.6f   %7.6f\n" % ((elementDict[site.element], site.ox_state * self.CHARGE_CONVERSION) + tuple(site.coords/self.BOHR_IN_ANGSTROM)))
+                file.write("%i %7.6f    %7.6f   %7.6f   %7.6f\n" % ((elementDict[site.ion.element], site.ion.ox_state * self.CHARGE_CONVERSION) + tuple(site.coords/self.BOHR_IN_ANGSTROM)))
             
             self.map.tofile(file, "\n")
             
@@ -617,19 +628,14 @@ class BVStructure:
 
         logging.debug(f"Calculating site BVS for {p1Label}")
         # Get series representing the ion in question
-        targetIon = self.sites.loc[p1Label]
-        targetIonTuple = (targetIon["element"], int(targetIon["ox_state"]))
+        targetSite = self.sites.loc[p1Label]
         # Removes all anions/cations from the structure
-        selectedAtoms = self.bufferedSites[self.bufferedSites["ox_state"] * targetIon["ox_state"] < 0]
-
-        # Ensure the required bv parmeters have been found
-        if targetIonTuple not in self.bvParams.keys():
-            self.bvParams[targetIonTuple] = self.get_bv_params(targetIonTuple)
+        selectedAtoms = self.bufferedSites[self.bufferedSites["ox_state"] * targetSite["ion"].ox_state < 0]
 
         # For each atom in the structure
-        for fixedIon in selectedAtoms.itertuples():
+        for fixedSite in selectedAtoms.itertuples():
 
-            vector = targetIon["coords"] - fixedIon.coords
+            vector = targetSite["coords"] - fixedSite.coords
 
             # Calculate the point to point distance between the voxel position and the atom position
             ri = self.calc_vector_distance(vector)
@@ -645,7 +651,7 @@ class BVStructure:
 
             # Otherwise, calcualted the BV value and add it to the total
             else:
-                params = self.bvParams[targetIonTuple][fixedIon.label]
+                params = self.get_bv_param(fixedSite.ion, targetSite["ion"])
                 vbv = bvsFunction(params.r0, ri, params.ib, vector)
                 vbvSum += vbv
 
@@ -658,6 +664,8 @@ class BVStructure:
 
         # Create a dictionary of the lone pair sites and the unit vector representing their direction.
         lpSiteDict = {}
+
+        lonePairIon = Ion("LP", -2)
         
         for site in self.sites[self.sites["lp"]].itertuples():
             vbvs = self.find_site_bvs(site.Index, vector=True)
@@ -670,7 +678,7 @@ class BVStructure:
         for site in self.bufferedSites[self.bufferedSites["lp"]].itertuples():
             p1Label = site.Index.split("(")[0]
             if p1Label in lpSiteDict.keys():
-                self.bufferedSites.loc["lp" + site.Index] = [f"lp{site.label}", "LP", -2, 0, site.coords + lpSiteDict[p1Label]*distance]
+                self.bufferedSites.loc["lp" + site.Index] = [f"lp{site.label}", lonePairIon, -2, 0, site.coords + lpSiteDict[p1Label]*distance]
 
         logging.debug(self.bufferedSites)
 
@@ -697,16 +705,27 @@ def calc_vector_bv(r0: float, ri:float, ib:float, vector:np.ndarray) -> np.ndarr
     """
     return calc_bv(r0, ri, ib) * vector / ri
 
-@njit
-def calc_Ebond(d0:float, rmin:float, ri:float, ib:float):
+# ----- JITED FUNCTIONS -----
+
+@njit(float64(float64, float64, float64, float64))
+def calc_Ebond(d0:float, rmin:float, ri:float, ib:float) -> float:
+    """
+        Calculates the bonding energy for BVSE.
+    """
     return d0 * (np.exp((rmin - ri)*ib) -1 )**2 - d0
 
-@njit
-def calc_Ecoul(q1, q2, ri:float, r1:float, r2:float, f:float):
+@njit(float64(float64, float64, float64, float64, float64, float64))
+def calc_Ecoul(q1:float, q2:float, ri:float, r1:float, r2:float, f:float) -> float:
+    """
+        Calculates the Columbic repulsion energy for BVSE.
+    """
     return (q1* q2)/ri * math.erfc(ri/(f*(r1 + r2)))
 
-@njit
-def calc_distance(point1, point2, cutoff=1000):
+@njit(float64(float64[:], float64[:], float64))
+def calc_distance(point1, point2, cutoff=1000.) -> float:
+    """
+        Calculates the distance between two points, with a cutoff value.
+    """
     
     deltaX = abs(point2[0] - point1[0])
     if deltaX > cutoff:  return deltaX
@@ -718,35 +737,70 @@ def calc_distance(point1, point2, cutoff=1000):
     return math.sqrt(deltaX**2 + deltaY**2 + deltaZ**2)
 
 @njit
-def voxel_bvse(position, cutoff, mode, screeningFactor, bondIons, coulIons):
+def jit_voxel_cartesian(shift:np.ndarray, voxelNo:np.ndarray, vectors:np.ndarray):
+
+        return np.sum((shift/voxelNo).reshape(3,1) * vectors, axis=0)
+
+@njit(locals=dict(r=float64))
+def voxel_bvse(voxelId:np.ndarray, voxelNos:np.ndarray, vectors:np.ndarray, cutoff:float, mode:int, screeningFactor:float, bondIons:np.ndarray, coulIons:np.ndarray):
+    """
+        Function to calculate the BVSE at a specific point. Uses numba to do Just-In-Time compliation for the function, for
+        peformance improvements. Arguments: \n
+        Position - A 3 element numpy array indicating the voxel position in angstroms. \n
+        Cutoff - The radius cutoff for the energy function. \n
+        Mode - An integer indicating what parts of the BVSE calculation to complete. \n
+        Screening Factor - The screening factor for the Coulumbic repulsion calculation. \n
+        Bond Ions - A numpy array indicating all ions to calculate the bond energy with. Has format of
+        [[x, y, z, d0, rmin, ib]] \n
+        Coul Ions - A numpy array indicating all ions to calculate the Coulumbic repulsion with. Has format of
+        [[x, y, z, q1, q2, r1, r2, screeningFactor]]
+    """
     
+    position = np.sum((voxelId/voxelNos).reshape(3,1) * vectors, axis=0)
     Ebond = 0.
     Ecoul = 0.
+    r = 0.
 
     if mode < 2:
-        for i in bondIons:
+        for i in range(bondIons.shape[0]):
             
-            r = calc_distance(position, i[:2], cutoff)
+            ion = bondIons[i]
+
+            r = calc_distance(position, ion[:3], cutoff)
 
             if r > cutoff:
                 continue
 
             elif r < 1:
-                Ebond = 20
+                Ebond = 20.
                 break
             
             else:
-                Ebond += calc_Ebond(d0=i[3], rmin=i[4], ri=r, ib=i[5])
+                Ebond += calc_Ebond(d0=ion[3], rmin=ion[4], ri=r, ib=ion[5])
 
     if mode > 0:
-        for i in coulIons:
+        for i in range(coulIons.shape[0]):
+
+            ion = coulIons[i]
             
-            r = calc_distance(position, i[:2], cutoff)
+            r = calc_distance(position, ion[:3], cutoff)
 
             if r > cutoff:
                 continue
             else:
-                Ecoul += calc_Ecoul(q1=i[3], q2=i[4], ri=r, r1=i[5], r2=i[6], f=screeningFactor)
+                Ecoul += calc_Ecoul(q1=ion[3], q2=ion[4], ri=r, r1=ion[5], r2=ion[6], f=screeningFactor)
 
     return Ebond + Ecoul
+
+@njit
+def bvse_map(voxelNos:np.ndarray, vectors:np.ndarray, cutoff:float, mode:int, screeningFactor:float, bondIons:np.ndarray, coulIons:np.ndarray, resultMap:np.ndarray):
+
+    # For every voxel
+    for h in range(voxelNos[0]):
+        for k in range(voxelNos[1]):
+            for l in range(voxelNos[2]):
+                resultMap[h][k][l] = voxel_bvse(np.array((h, k, l)), voxelNos, vectors, cutoff, mode, screeningFactor, bondIons, coulIons)
+
+    return resultMap
+
 

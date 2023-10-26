@@ -124,35 +124,29 @@ class BVDatabase:
         else:
             self.cursor.execute(command, arguments)
 
-    def fetchall(self):
+    def fetch_all(self):
         """
             Method for fetching all results from the database.
         """
         return self.cursor.fetchall()
-
-    def fetchone(self):
-        """
-            Method for fetching one result from the database.
-        """
-        return self.cursor.fetchone()
     
-    def extractFetchone(self):
+    def fetch_one(self):
         """
             Method for removing the tuple around the results from fetchone().
         """
-        result = self.fetchone()
+        result = self.cursor.fetchone()
         if result is not None:
             return result[0]
         else:
             return None
     
-    def lastRowId(self):
+    def last_row_id(self):
         """
             Method for getting the id of the last row changed on the database.
         """
         return self.cursor.lastrowid
 
-    def createDatabase(self):
+    def create_database(self):
         """
             Executes a SQL script to reset the database.
         """
@@ -182,7 +176,7 @@ class BVDatabase:
             );
             ''')
         
-    def resetDatabase(self):
+    def reset_database(self):
         """
             Method that resets the database by dropping all tables and executing a SQL script to create the database again.
         """
@@ -195,7 +189,7 @@ class BVDatabase:
       
         # Code for dropping tables lifted from db-reset.py
         self.execute("SELECT 'drop table ' || name || ';' FROM sqlite_master WHERE type = 'table'")
-        commands = self.fetchall()
+        commands = self.fetch_all()
 
         for (command,) in commands:
             if "sqlite_sequence" in command:
@@ -205,45 +199,45 @@ class BVDatabase:
             logging.info("Succesfully Executed {c}".format(c=command))
 
         # Creates the new database
-        self.createDatabase()
+        self.create_database()
 
-    def getOrInsertIon(self, ion:Ion):
+    def get_or_insert_ion(self, ion:Ion):
         """
             Method that tries to find an ion in the database. If it is not found, a new database entry is added for that ion. In any case, the id of the ion's entry is returned.
         """
 
         self.execute("SELECT id FROM Ion WHERE symbol = ? AND os = ?", (ion.element, ion.ox_state, ))
 
-        ans = self.extractFetchone()
+        ans = self.fetch_one()
         if ans == None:
             self.execute("INSERT OR IGNORE INTO Ion (symbol, os) VALUES (?,?)", (ion.element, ion.ox_state, ))
-            return self.lastRowId()
+            return self.last_row_id()
         else:
             return ans
 
-    def createEntry(self, ion1:Ion, ion2:Ion, r0:float, b:float):
+    def create_entry(self, ion1:Ion, ion2:Ion, r0:float, b:float):
         """
             Creates a database entry for a BV parameter set. Only basic information, included in Brown's cif files is set in this method.
         """
 
-        ion1Id = self.getOrInsertIon(ion1)
-        ion2Id = self.getOrInsertIon(ion2)
+        ion1Id = self.get_or_insert_ion(ion1)
+        ion2Id = self.get_or_insert_ion(ion2)
 
         self.execute("SELECT id FROM BVParam WHERE ion1=? AND ion2=?", (ion1Id, ion2Id))
-        if self.extractFetchone() == None:
+        if self.fetch_one() == None:
             ib = 1/b
             self.execute("INSERT INTO BVParam (ion1, ion2, r0, b, ib) VALUES (?,?,?,?,?)", (ion1Id, ion2Id, r0, b, ib))
 
-        return self.lastRowId()
+        return self.last_row_id()
     
-    def addInfoBV(self, paramId:int, cn:float, rCutoff:float):
+    def update_bv_info(self, paramId:int, cn:float, rCutoff:float):
         """
             Updates the bond valence parameters database entry to add information on the coordination number and radius cutoff, information which is only included in the softBV parameters.
         """
 
         self.execute("UPDATE BVParam SET cn = ?, r_cutoff = ? WHERE id = ?", (cn, rCutoff, paramId, ))
 
-    def addInfoIon(self, ionId:int, radii:float, softness:float, period:int, group:int, block:int, atomicNo:int):
+    def update_ion_info(self, ionId:int, radii:float, softness:float, period:int, group:int, block:int, atomicNo:int):
         """
             Updates the ion database entry to add information on the radius, softness and principle quantum number, only included in the softBV parameters.
         """
@@ -262,14 +256,14 @@ class BVDatabase:
         return ((b**2)/2 * 14.4 * (c*(abs(os1*os2))**(1/c)) / (rmin*np.sqrt(period1 * period2)))
     
     def _params_error_check(self, ion1:Ion, ion2:Ion):
-        result = self.fetchall()
+        result = self.fetch_all()
         if result is None or len(result) == 0:
             raise Exception(f"The combination of ions ({ion1}, {ion2}) are not on the BV Parameters Database")
         elif len(result) != 1:
             logging.warn(f"Multiple different database entries for the same ions ({ion1}, {ion2})")
         return result[0]
 
-    def getParams(self, ion1:Ion, ion2:Ion, bvse:bool = False):
+    def get_bv_params(self, ion1:Ion, ion2:Ion, bvse:bool = False):
         """
             Finds the parameters for a combination of two ions and returns them. The input ions should be in the format of Symbol-OS Digit-Sign.
 
@@ -307,14 +301,21 @@ class BVDatabase:
         """
 
         self.execute("SELECT atomic_no FROM Ion WHERE symbol = ?", (element,))
-        return self.extractFetchone()
+        return self.fetch_one()
     
     def get_radius(self, ion:Ion):
         """
             Function to find the ionic radius of a particular element, given the symbol
         """
         self.execute("SELECT radii FROM Ion WHERE symbol = ? AND os = ?", (ion.element, ion.ox_state, ))
-        return self.extractFetchone()
+        return self.fetch_one()
+    
+    def get_period(self, ion:Ion):
+        """
+            Function to find the period of a particular element, given the symbol
+        """
+        self.execute("SELECT period FROM Ion WHERE symbol = ? AND os = ?", (ion.element, ion.ox_state, ))
+        return self.fetch_one()
 
 
 def readCif(fileLocation:str):
@@ -341,7 +342,7 @@ def cifToDb(fileIn:str, fileOut:str):
     db = BVDatabase(fileOut)
 
     for row in bvTable:
-        db.createEntry(row[0], int(row[1]), row[2], int(row[3]), float(row[4]), float(row[5]))
+        db.create_entry(row[0], int(row[1]), row[2], int(row[3]), float(row[4]), float(row[5]))
 
     db.close()
 
@@ -351,7 +352,7 @@ def bvDatToDb(fileIn:str, fileOut:str):
     """
 
     db = BVDatabase(fileOut)
-    db.resetDatabase()
+    db.reset_database()
 
     with open(fileIn, "r") as data:
         entries = data.readlines()
@@ -362,8 +363,8 @@ def bvDatToDb(fileIn:str, fileOut:str):
                 break
             elif started:
                 row =  entry.split()
-                paramId = db.createEntry(row[0], int(row[1]), row[2], int(row[3]), float(row[4]), float(row[5]))
-                db.addInfoBV(paramId, float(row[6]), float(row[7]))
+                paramId = db.create_entry(row[0], int(row[1]), row[2], int(row[3]), float(row[4]), float(row[5]))
+                db.update_bv_info(paramId, float(row[6]), float(row[7]))
             elif entry == "DATA_START\n":
                 started = True
             else:
@@ -387,8 +388,8 @@ def ionDatToDb(fileIn:str, fileOut:str):
                 break
             elif started:
                 row = entry.split()
-                ionId = db.getOrInsertIon(Ion(row[1], int(row[2])))
-                db.addInfoIon(ionId, float(row[8]), float(row[9]), int(row[5]), int(row[6]), int(row[7]), int(row[0]))
+                ionId = db.get_or_insert_ion(Ion(row[1], int(row[2])))
+                db.update_ion_info(ionId, float(row[8]), float(row[9]), int(row[5]), int(row[6]), int(row[7]), int(row[0]))
             elif entry == "DATA_START\n":
                 started = True
             else:
@@ -397,7 +398,7 @@ def ionDatToDb(fileIn:str, fileOut:str):
     db.close()
 
 
-def createInputFromCif(fileIn:str, fileOut:str, conductor:str):
+def create_input_from_cif(fileIn:str, fileOut:str, conductor:str):
     
     CORE = core()
 

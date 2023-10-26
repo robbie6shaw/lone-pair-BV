@@ -6,45 +6,45 @@ from fileIO import *
 def create_input(args:list):
 
     if len(args) == 3:
-        createInputFromCif(args[0], args[1], args[2])
+        create_input_from_cif(args[0], args[1], args[2])
     else:
         raise Exception(f"Method create_input requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'conductor'")
 
 def bvsm(args:list):
 
     if len(args) == 3:
-        pbsnf4 = BVStructure.from_file(args[0])
-        pbsnf4.initalise_map(float(args[2]))
-        pbsnf4.populate_map_bvsm()
-        pbsnf4.export_map(args[1])
+        crystal = BVStructure.from_file(args[0])
+        crystal.initalise_map(float(args[2]))
+        crystal.populate_map_bvsm()
+        crystal.export_map(args[1])
     else:
         raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution'")
     
 def bvsm_penalty(args:list):
 
     if len(args) == 3 or len(args) == 5:
-        pbsnf4 = BVStructure.from_file(args[0])
-        pbsnf4.initalise_map(float(args[2]))
-        pbsnf4.create_lone_pairs()
+        crystal = BVStructure.from_file(args[0])
+        crystal.initalise_map(float(args[2]))
+        crystal.create_lone_pairs()
         if len(args) == 3:
-            pbsnf4.populate_map_bvsm(penalty=0.05, fType="quadratic")
+            crystal.populate_map_bvsm(penalty=0.05, fType="quadratic")
         else:
-            pbsnf4.populate_map_bvsm(penalty=float(args[3]), fType=args[4])
-        pbsnf4.export_map(args[1])
+            crystal.populate_map_bvsm(penalty=float(args[3]), fType=args[4])
+        crystal.export_map(args[1])
     else:
         raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution'")
 
 def only_penalty(args:list):
 
     if len(args) == 3 or len(args) == 5:
-        pbsnf4 = BVStructure.from_file(args[0])
-        pbsnf4.initalise_map(float(args[2]))
-        pbsnf4.create_lone_pairs()
+        crystal = BVStructure.from_file(args[0])
+        crystal.initalise_map(float(args[2]))
+        crystal.create_lone_pairs()
         if len(args) == 3:
-            pbsnf4.populate_map_bvsm(penalty=0.05, fType="quadratic", only_penalty=True)
+            crystal.populate_map_bvsm(penalty=0.05, fType="quadratic", only_penalty=True)
         else:
-            pbsnf4.populate_map_bvsm(penalty=float(args[3]), fType=args[4], only_penalty=True)
-        pbsnf4.export_map(args[1])
+            crystal.populate_map_bvsm(penalty=float(args[3]), fType=args[4], only_penalty=True)
+        crystal.export_map(args[1])
     else:
         raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution'")
 
@@ -54,12 +54,12 @@ def bvse(args:list):
         args[3] = int(args[3])
         if args[3] not in [0, 1, 2]: raise Exception(f"Mode can be set to 0, 1 or 2; was set to {args[3]}")
 
-        pbsnf4 = BVStructure.from_file(args[0], bvse=True)
-        pbsnf4.initalise_map(float(args[2]))
+        crystal = BVStructure.from_file(args[0], bvse=True)
+        crystal.initalise_map(float(args[2]))
         if args[3] > 0:
-            pbsnf4.create_lone_pairs()
-        pbsnf4.populate_map_bvse(mode = args[3])
-        pbsnf4.export_map(args[1])
+            crystal.create_lone_pairs()
+        crystal.populate_map_bvse(mode = args[3])
+        crystal.export_map(args[1])
     else:
         raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution', 'mode'")
     
@@ -69,12 +69,12 @@ def bvse_jit(args:list):
         args[3] = int(args[3])
         if args[3] not in [0, 1, 2]: raise Exception(f"Mode can be set to 0, 1 or 2; was set to {args[3]}")
 
-        pbsnf4 = BVStructure.from_file(args[0], bvse=True)
-        pbsnf4.initalise_map(float(args[2]))
+        crystal = BVStructure.from_file(args[0], bvse=True)
+        crystal.initalise_map(float(args[2]))
         if args[3] > 0:
-            pbsnf4.create_lone_pairs()
-        pbsnf4.populate_map_bvse_jit(mode = args[3])
-        pbsnf4.export_map(args[1])
+            crystal.create_lone_pairs()
+        crystal.populate_map_bvse_jit(mode = args[3])
+        crystal.export_map(args[1])
     else:
         raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution', 'mode'")
 

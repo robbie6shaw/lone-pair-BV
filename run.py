@@ -1,7 +1,7 @@
 import logging, sys
 from argparse import ArgumentParser
 from datetime import datetime
-from bv2 import *
+from calculate import *
 from fileIO import *
 from pathlib import Path
 from shutil import copy2

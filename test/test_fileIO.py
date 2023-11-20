@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 import pandas as pd
-import bv2, fileIO
+import calculate, fileIO
 import logging, math
 from test_BVStructure import alteredTestCase
 

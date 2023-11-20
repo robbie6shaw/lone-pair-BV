@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 import pandas as pd
-import bv2
+import calculate
 import logging, math
 from datetime import datetime
 
@@ -26,7 +26,7 @@ class alteredTestCase(unittest.TestCase):
 class TestSimpleBVStructure(alteredTestCase):
 
     def setUp(self):
-        self.obj = bv2.BVStructure.from_file("test/betaPbF2-simplified.inp")
+        self.obj = calculate.BVStructure.from_file("test/betaPbF2-simplified.inp")
 
     def test_conductor(self):
         self.assertEqual(self.obj.conductor[0], "F")
@@ -103,7 +103,7 @@ class TestSimpleBVStructure(alteredTestCase):
 class TestBVStructureInternalMethods(alteredTestCase):
 
     def setUp(self):
-        self.obj = bv2.BVStructure.from_file("test/betaPbF2-simplified.inp")
+        self.obj = calculate.BVStructure.from_file("test/betaPbF2-simplified.inp")
 
     def test_translate_custom_vectors(self):
         self.obj.vectors = np.array([[1,1,0],[0,1,0],[0,5,1]])
@@ -193,7 +193,7 @@ class TestBVStructureInternalMethods(alteredTestCase):
 class TestVectorBVS(alteredTestCase):
 
     def setUp(self):
-        self.obj = bv2.BVStructure.from_file("test/pbsnf4-for-testing.inp")
+        self.obj = calculate.BVStructure.from_file("test/pbsnf4-for-testing.inp")
 
     def test_distance_w_cutoff_vector(self):
 
@@ -239,7 +239,7 @@ class TestVectorBVS(alteredTestCase):
 class TestLonePairs(alteredTestCase):
 
     def setUp(self):
-        self.obj = bv2.BVStructure.from_file("test/pbsnf4-for-testing.inp")
+        self.obj = calculate.BVStructure.from_file("test/pbsnf4-for-testing.inp")
 
     def test_linear_penalty_function(self):
         self.assertAlmostEqual(self.obj._linear_penalty(-2, 2, 0.5), 1/3)

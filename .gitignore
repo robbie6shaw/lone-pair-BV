@@ -7,3 +7,5 @@ test/__pycache__/*
 logs/*
 *.inp
 files/*
+*.pyc
+*.sqlite3-journal

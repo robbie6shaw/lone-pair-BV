@@ -1,167 +1,187 @@
 import logging, sys
+from argparse import ArgumentParser
 from datetime import datetime
 from bv2 import *
 from fileIO import *
+from pathlib import Path
+from shutil import copy2
 
-def create_input(args:list):
+RESOLUTION_ARGS = {'default':0.1, 'type':float, 'help':"The target resolution of the produced map. The number of voxels will be rounded up to ensure divsibility by 12. Defaults to 0.1."}
+EC_ARGS = {'action':'store_true', 'help':'Toggles whether the effective or absolute charge is used for repulsion calculations in bond valence site energy. Defaults to absolute charge.'}
+NJ_ARGS = {'action':'store_true', 'help':'Toggles whether just-in-time compliation is used in the calcualtion. Defaults to using JIT for large speed gains, flag turns it off.'}
 
-    if len(args) == 3:
-        create_input_from_cif(args[0], args[1], args[2])
-    else:
-        raise Exception(f"Method create_input requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'conductor'")
+def create_input(parser:ArgumentParser, overrideArgs:list = None):
 
-def bvsm(args:list):
+    parser.add_argument("cif_file", help="The structure to be analysed, in a cif file format.")
+    parser.add_argument("output_location", help="The location for the create input file to be outputted to.")
+    parser.add_argument("conductor", help="The conducting ion under investigation. Specified in the format (ELEMENT)(CHARGE NUMBER)(CHARGE SIGN)")
+    args = parser.parse_args(overrideArgs)
 
-    if len(args) == 3:
-        crystal = BVStructure.from_file(args[0])
-        crystal.initalise_map(float(args[2]))
-        crystal.populate_map_bvsm()
-        crystal.export_map(args[1])
-    else:
-        raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution'")
-    
-def bvsm_penalty(args:list):
+    create_input_from_cif(Path(args.cif_file), Path(args.output_location), args.conductor)
 
-    if len(args) == 3 or len(args) == 5:
-        crystal = BVStructure.from_file(args[0])
-        crystal.initalise_map(float(args[2]))
+def bvsm(parser:ArgumentParser, overrideArgs:list = None):
+
+    parser.add_argument("input_file")
+    parser.add_argument("output_file")
+    parser.add_argument("-r", "--resolution", **RESOLUTION_ARGS)
+    parser.add_argument("-m", "--mode", default=1, choices=range(0,3), type=int)
+    parser.add_argument("-n", "--no_jit", **NJ_ARGS)
+    parser.add_argument("-k", "--penalty_constant", default=0.05, type=float)
+    parser.add_argument("-t", "--penalty_type", default="q", choices=("q","l","quadratic","linear"))
+
+    args = vars(parser.parse_args(overrideArgs))
+    args.pop('function', None)
+    _bvsm(**args)
+
+def _bvsm(input_file:str, output_file:str, resolution:float, mode:int, no_jit:bool, penalty_constant:float, penalty_type:str):
+
+    crystal = BVStructure.from_file(input_file, bvse=True)
+    crystal.initalise_map(resolution)
+
+    if mode > 0:
         crystal.create_lone_pairs()
-        if len(args) == 3:
-            crystal.populate_map_bvsm(penalty=0.05, fType="quadratic")
-        else:
-            crystal.populate_map_bvsm(penalty=float(args[3]), fType=args[4])
-        crystal.export_map(args[1])
+
+    if no_jit:
+        if mode == 0:
+            crystal.populate_map_bvsm(fType=penalty_type, penalty=0)
+        elif mode == 1:
+            crystal.populate_map_bvsm(fType=penalty_type, penalty=penalty_constant)
+        elif mode == 2:
+            crystal.populate_map_bvsm(fType=penalty_type, penalty=penalty_constant, only_penalty=True)
+
     else:
-        raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution'")
+        if penalty_type == "l" or penalty_type == "linear":
+            logging.error("Linear penalty functions are not implemented using JIT. Add flag --no_jit to run.")
 
-def only_penalty(args:list):
+        crystal.populate_map_bvsm_jit(mode = mode, penalty=penalty_constant)
 
-    if len(args) == 3 or len(args) == 5:
-        crystal = BVStructure.from_file(args[0])
-        crystal.initalise_map(float(args[2]))
+    crystal.export_map(output_file)
+
+def bvse(parser:ArgumentParser, overrideArgs:list = None):
+
+    parser.add_argument("input_file")
+    parser.add_argument("output_file")
+    parser.add_argument("-r", "--resolution", **RESOLUTION_ARGS)
+    parser.add_argument("-m", "--mode", default=1, choices=range(0,3), type=int)
+    parser.add_argument("-e", "--effective_charge", **EC_ARGS)
+    parser.add_argument("-n", "--no_jit", **NJ_ARGS)
+
+    args = vars(parser.parse_args(overrideArgs))
+    args.pop('function', None)
+    _bvse(**args)
+
+def _bvse(input_file:str, output_file:str, resolution:float, mode:int, effective_charge:bool, no_jit:bool):
+
+    crystal = BVStructure.from_file(input_file, bvse=True)
+    crystal.initalise_map(resolution)
+    if mode > 0:
         crystal.create_lone_pairs()
-        if len(args) == 3:
-            crystal.populate_map_bvsm(penalty=0.05, fType="quadratic", only_penalty=True)
-        else:
-            crystal.populate_map_bvsm(penalty=float(args[3]), fType=args[4], only_penalty=True)
-        crystal.export_map(args[1])
+    if no_jit:
+        crystal.populate_map_bvse(mode=mode)
     else:
-        raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution'")
+        crystal.populate_map_bvse_jit(mode = mode, effectiveCharge=effective_charge)
+    crystal.export_map(output_file)
 
-def bvse(args:list):
 
-    if len(args) == 4:
-        args[3] = int(args[3])
-        if args[3] not in [0, 1, 2]: raise Exception(f"Mode can be set to 0, 1 or 2; was set to {args[3]}")
+def site_bvs(parser:ArgumentParser, overrideArgs:list = None):
 
-        crystal = BVStructure.from_file(args[0], bvse=True)
-        crystal.initalise_map(float(args[2]))
-        if args[3] > 0:
-            crystal.create_lone_pairs()
-        crystal.populate_map_bvse(mode = args[3])
-        crystal.export_map(args[1])
-    else:
-        raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution', 'mode'")
-    
-def bvse_jit(args:list):
+    parser.add_argument("input_file")
+    parser.add_argument("-v", "--vector", action="store_true")
 
-    if len(args) == 4:
-        args[3] = int(args[3])
-        if args[3] not in [0, 1, 2]: raise Exception(f"Mode can be set to 0, 1 or 2; was set to {args[3]}")
+    args = parser.parse_args(overrideArgs)
 
-        crystal = BVStructure.from_file(args[0], bvse=True)
-        crystal.initalise_map(float(args[2]))
-        if args[3] > 0:
-            crystal.create_lone_pairs()
-        crystal.populate_map_bvse_jit(mode = args[3])
-        crystal.export_map(args[1])
-    else:
-        raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution', 'mode'")
-
-def site_bvs(args:list):
-    if len(args) == 2:
-        structure = BVStructure.from_file(args[0])
-        structure.define_buffer_area()
-        structure.find_buffer_sites()
+    crystal = BVStructure.from_file(args.input_file)
+    crystal.define_buffer_area()
+    crystal.find_buffer_sites()
         
-        for site in structure.sites.itertuples():
-            print(f"Site {site.Index} at {site.coords} = {structure.find_site_bvs(site.Index, bool(int(args[1])))}")
+    for site in crystal.sites.itertuples():
+        print(f"Site {site.Index} at {site.coords} = {crystal.find_site_bvs(site.Index, args.vector)}")
 
-def bulk(args:list):
+def _create_dir(path:Path, name:str):
+    resultPath = path.joinpath(name)
+    if not resultPath.is_dir():
+        resultPath.mkdir()
+    return resultPath
 
-    with open(args[0]) as f:
-        for i, line in enumerate(f.readlines()):
+def bulk_bvse(parser:ArgumentParser, overrideArgs:list = None):
+
+    parser.add_argument("base_path", help="The folder that the program should use for the calculations. Should contain a folder named 'cif' that contains all the structures to process. The results will be outputted to 'result.")
+    parser.add_argument("conductor", help="The conducting ion under investigation. Specified in the format (ELEMENT)(CHARGE NUMBER)(CHARGE SIGN)")
+    parser.add_argument("-r", "--resolution", **RESOLUTION_ARGS)
+    parser.add_argument("-e", "--effective_charge", **EC_ARGS)
+    args = parser.parse_args(overrideArgs)
+
+    basePath = Path(args.base_path)
+    cifPath = basePath.joinpath("cif")
+
+    if not cifPath.is_dir():
+        logging.error("The folder specified does not contain a folder called 'cifs'")
+        sys.exit()
+
+    else:
+
+        resultPath = basePath.joinpath("result")
+        if resultPath.is_dir():
+            for i in range(100):
+                trialPath = resultPath.with_stem(f"{resultPath.stem}-{i}")
+                if not trialPath.is_dir():
+                    resultPath = trialPath
+                    break
+
+        resultPath.mkdir()
+
+        for cifFile in cifPath.iterdir():
+            formula = readCif(cifFile)['_chemical_formula_structural'].replace(' ','')
+            # create_input_from_cif(cifFile, inpPath.joinpath(cifFile.name).with_suffix(".inp"), conductor)
+            formulaFolder = _create_dir(resultPath, formula)
+            inpFile = formulaFolder.joinpath(formula).with_suffix(".inp")
+            cubeFile = formulaFolder.joinpath(formula).with_suffix(".cube")
+
             try:
 
-                if i == 0:
-                    mode = line.strip()
-                    if mode not in ["bvsm", "bvse"]:
-                        logging.error("Unrecognised mode of operation. Quitting")
-                        sys.exit()
-                else:
-                    structure = BVStructure.from_file(line.strip(), bvse = (mode == "bvse"))
+                copy2(cifFile, formulaFolder.joinpath(formula).with_suffix(".cif"))
 
-                    structure.initalise_map(0.15)
-                    structure.create_lone_pairs()
-                    structure.export_cif(f"{line.strip()[:-4]}-lp.cif")
+                create_input_from_cif(cifFile, inpFile, args.conductor)
 
-                    if mode == "bvsm":
-                        structure.populate_map_bvsm()
-                    elif mode == "bvse":
-                        structure.populate_map_bvse()
-                    structure.export_map(f"{line.strip()[:-4]}-{mode}.cube")
-                    structure.reset_map()
-            except:
-                e = sys.exc_info()[0]
-                logging.error(f"Caught Exception for {line}: {e}")
+                _bvse(input_file=inpFile, output_file=cubeFile, resolution=args.resolution, mode=1, effective_charge=args.effective_charge)
+            
+            except Exception as e:
+                logging.error(f"The following {type(e)} exception was raised when processing the structure {formula}. The following traceback was produced:")
+                print(e)
+                continue
+
+def render(parser:ArgumentParser, overrideArgs:list = None):
+
+    parser.add_argument("input_file")
+    parser.add_argument("-l","--lp","--lone_pair", action='store_true', help='Toggles whether lone pairs are rendered in the cif file by adding dummy helium sites')
+    args = parser.parse_args(overrideArgs)
+
+    structure = BVStructure.from_file(args.input_file)
+    structure.define_buffer_area()
+    structure.find_buffer_sites()
+    if args.lp:
+        structure.create_lone_pairs()
+    logging.debug(structure.bufferedSites)
+    structure.export_cif(args[1])
 
 
-def render(args:list):
+def data_import(parser:ArgumentParser, overrideArgs:list = None):
 
-    if len(args) == 2 or len(args) == 3:
-        structure = BVStructure.from_file(args[0])
-        structure.define_buffer_area()
-        structure.find_buffer_sites()
-        if len(args) == 3:
-            if args[2] in ["lp", "lone-pair"]:
-                structure.create_lone_pairs()
-        logging.debug(structure.bufferedSites)
-        structure.export_cif(args[1])
+    bvDatToDb("cif-files/database_binary.dat", "soft-bv-params.sqlite3")
+    ionDatToDb("cif-files/database_unitary.dat", "soft-bv-params.sqlite3")
 
-def analyse(args:list):
-    
-    lessThan = np.vectorize(lambda x, y: float(x) < y, excluded=(1,))
-    toInt = np.vectorize(lambda x: int(x))
-
-    limits = [0.05, 0.075, 0.10]
-
-    with open(args[0]) as f:
-        contents = f.readlines()
-        voxelNo = toInt(np.array(contents[2].split())).prod()
-        
-        print(f"Conductivity Volume Analysis for the file {args[0]}\nMismatch Level\tPercentage Under")
-        for limit in limits:
-            underLim = lessThan(np.array(contents[3].split()), limit)
-            percentUnder = underLim.sum() / voxelNo * 100
-            print(f"{limit}\t\t{percentUnder}")
-
-def data_import(args:list):
-
-    if args[0].lower() in ["s", "sbv", "soft", "softbv"]:
-        bvDatToDb("cif-files/database_binary.dat", "soft-bv-params.sqlite3")
-        ionDatToDb("cif-files/database_unitary.dat", "soft-bv-params.sqlite3")
-
-def buffer_export(args:list):
+def buffer_export(parser:ArgumentParser, overrideArgs:list = None):
     """
         Export the buffered site list to an excel file.
     """
+    
+    parser.add_argument("input_file")
+    parser.add_argument("output_file")
+    args = parser.parse_args(overrideArgs)
 
-    if len(args) == 3:
-        pbsnf4 = BVStructure.from_file(args[0])
-        pbsnf4.initalise_map(float(args[2]))
-        pbsnf4.bufferedSites.to_excel(args[1])
-    else:
-        raise Exception(f"Method bvs requires 3 arguments, got {args}.\nThe following arguments are required: 'fileIn, 'fileOut', 'resolution'")
+    pbsnf4 = BVStructure.from_file(args.input_file)
+    pbsnf4.initalise_map(1.0)
+    pbsnf4.bufferedSites.to_excel(args.output_file)
 
 # Code Allows Command Line Running of Functions https://stackoverflow.com/a/52837375
 if __name__ == '__main__' and len(sys.argv) > 1:
@@ -173,11 +193,17 @@ if __name__ == '__main__' and len(sys.argv) > 1:
 
     start_time = datetime.now()
 
-    if len(sys.argv) > 2:
-        print(sys.argv)
-        globals()[sys.argv[1]](sys.argv[2:])
-    else:
-        globals()[sys.argv[1]]()
+    parser = ArgumentParser(
+        prog="lpbv",
+        description="Tool that can calculate bond valence mismatch or bond valence site energy maps of a crystal structure using a cif as input. Can add dummy lone pair sites to the structure."
+    )
+    parser.add_argument(
+        'function', 
+        help="Specifies the function of the lpbv to use. Consult documentation for list of possible calls"
+    )
+
+    print(sys.argv)
+    globals()[sys.argv[1]](parser)
 
     logging.info(f"Program Complete - Time Taken: {(datetime.now() - start_time)}")
 
@@ -188,12 +214,13 @@ else:
         logging.StreamHandler()
     ])
 
+    parser = ArgumentParser()
+
     #analyse(["cif-files/bulk-bvsm/PbSnF4-0.08l.grd", 0.1])  
     # bvs(["files/pbsnf4.inp", "files/temp.grd", 1])
-    bvse_jit(['results/PbSnF4/PbSnF4.inp', 'results/PbSnF4/PbSnF4-test.cube', '1', '1'])
-    # render(["cif-files/bulk-bvsm/KSn2F5.inp","cif-files/bulk-bvsm/KSn2F5-gen.cif"])
+    # bvse_jit(['results/PbSnF4/PbSnF4.inp', 'results/PbSnF4/PbSnF4-test.cube', '1', '1'])
+    # render(['results/Sn-II-database/result/Sn3BrF5/Sn3BrF5.inp', 'results/Sn-II-database/result/Sn3BrF5/Sn3BrF5-lp.cif','lp'])
     # create_input(["cif-files/ternary-fluorides/EntryWithCollCode152949 (PbSnF4).cif", "files/pbsnf4.inp", "F-"])
-
-
-
-
+    # new_bulk(["/home/rs/bv-project/results/Sn-II-database", "F-", 0.1])
+    # bvse(parser, ['results/Sn-II-database/result/Sn3F5BF4/Sn3F5BF4.inp', 'results/Sn-II-database/result/Sn3F5BF4/Sn3F5BF4-test.cube'])
+    bvsm(parser, ['results/PbSnF4/PbSnF4.inp', 'results/PbSnF4/refactor-test/bvsm-nopen-5-njit.cube', "-r0.5", "-m0"])

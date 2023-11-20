@@ -7,6 +7,7 @@ import re
 import pymatgen.core as pmg
 import numpy as np
 import collections
+from pathlib import Path
 
 ## SHARED METHODS IN CORE CLASS
 class core:
@@ -45,7 +46,7 @@ class Ion:
 
     ION_REGEX = re.compile("([A-Za-z]{,2})(\d*)(\+|-)")
     LONE_PAIR_ELEMENTS = ["Pb", "Sn", "Bi", "Sb", "Tl"]
-    one_reducer = lambda self, x: "1" if x == "" else x
+    one_reducer = lambda x: "1" if x == "" else x
 
     def __init__(self, element:str, ox_state:int):
 
@@ -80,7 +81,7 @@ class Ion:
         if result is None:
             raise Exception(f"Cannot interpret the ion string sucessfully - {ion_string}")
         else:
-            return Ion(element = result[1], os = int(result[3] + cls.one_reducer(result[2])))
+            return Ion(element = result[1], ox_state = int(result[3] + cls.one_reducer(result[2])))
         
     def possible_lone_pair(self):
         return self.element in self.LONE_PAIR_ELEMENTS
@@ -277,8 +278,12 @@ class BVDatabase:
             result = self._params_error_check(ion1, ion2)
 
             if bvse:
-                if ion1.ox_state > 0: cationOs = ion1.ox_state
-                else: cationOs = ion2.ox_state
+
+                if ion1.ox_state > 0: 
+                    cationOs = ion1.ox_state
+                else: 
+                    cationOs = ion2.ox_state
+                    
                 rmin = self.rmin(result[7], result[8], result[0], result[1], cationOs, result[3])
                 d0 = self.d0(result[1], ion1.ox_state, ion2.ox_state, result[11], rmin, result[9], result[10])
                 return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], i1r = result[5], i2r = result[6], rmin = rmin, d0 = d0)
@@ -286,11 +291,7 @@ class BVDatabase:
                 return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], i1r = None, i2r = None, rmin = None, d0 = None)
             
         elif bvse:
-            self.execute("SELECT i1.radii, i2.radii FROM Ion i1 JOIN Ion i2 WHERE (i1.symbol = ? AND i1.os = ?) OR (i2.symbol = ? AND i2.ion = ?)", ion1[0], int(ion1[1]), ion2[0], int(ion2[2]))
-
-            result = self._params_error_check(ion1, ion2)
-
-            return core.bvparam(r0=None, ib=None, cn=None, r_cutoff=None, i1r=result[0], i2r=result[1], rmin=None, d0=None)
+            return core.bvparam(r0=None, ib=None, cn=None, r_cutoff=None, i1r=self.get_radius(ion1), i2r=self.get_radius(ion2), rmin=None, d0=None)
         else:
             return None
 
@@ -318,8 +319,8 @@ class BVDatabase:
         return self.fetch_one()
 
 
-def readCif(fileLocation:str):
-    return cf.ReadCif(fileLocation).first_block()
+def readCif(fileLocation:str|Path) -> cf.ReadCif:
+    return cf.ReadCif(str(fileLocation)).first_block()
 
 def fileToDb(fileIn:str, fileOut:str):
     """
@@ -398,7 +399,7 @@ def ionDatToDb(fileIn:str, fileOut:str):
     db.close()
 
 
-def create_input_from_cif(fileIn:str, fileOut:str, conductor:str):
+def create_input_from_cif(fileIn:Path, fileOut:Path, conductor:str):
     
     CORE = core()
 
@@ -406,10 +407,10 @@ def create_input_from_cif(fileIn:str, fileOut:str, conductor:str):
     struct = pmg.Structure.from_file(fileIn)
     conductor = Ion.from_string(conductor)
 
-    if fileIn[-4:] != ".cif":
-        logging.error(f"Incorrect file format. The input file should be a cif file and not a {fileIn[-3:]} file")
-    elif fileOut[-4:] != ".inp":
-        logging.error(f"Incorrect file format. The output file should be a inp file and not a {fileIn[-3:]} file")
+    if fileIn.suffix != ".cif":
+        logging.error(f"Incorrect file format. The input file should be a cif file and not a {fileIn.suffix} file")
+    elif fileOut.suffix != ".inp":
+        logging.error(f"Incorrect file format. The output file should be a inp file and not a {fileIn.suffix} file")
 
     # Open output file
     with open(fileOut, "w") as f:

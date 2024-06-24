@@ -1,54 +1,24 @@
+import sqlite3, logging, re, collections
 import CifFile as cf
-import pandas as pd
 import numpy as np
-import sqlite3
-import logging
-import re
 import pymatgen.core as pmg
-import numpy as np
-import collections
-from pathlib import Path
+from pathlib import Path          
 
-## SHARED METHODS IN CORE CLASS
-class core:
 
-    ION_REGEX = re.compile("([A-Za-z]{,2})(\d*)(\+|-)")
-    RESULT_CONVERTER = lambda self, x: "1" if x == "" else x
-    LONE_PAIR_ELEMENTS = ["Pb", "Sn", "Bi", "Sb", "Tl"]
-    ion = collections.namedtuple("Ion", ["element", "os"])
-    bvparam = collections.namedtuple("BVParam", ['r0', 'ib', 'cn', 'r_cutoff', 'i1r', 'i2r', 'rmin', 'd0'])
-
-    # def interpretIon(self, ion):
-    #         """
-    #             Interprets an ion in string format. The ion must be of format Symbol-OS Digit-Sign, otherwise the interpretation will not work.
-
-    #             Returns a tuple of (element, oxidation_state)
-    #         """
-    #         result = self.ION_REGEX.search(ion)
-    #         if result is None:
-    #             raise Exception(f"Cannot interpret ion ({ion}) sucessfully.")
-    #         else:
-    #             return self.ion(element = result[1], os = int(result[3] + self.RESULT_CONVERTER(result[2])))
-    
-    # def ion_to_str(self, ion:tuple|ion):
-    #     """
-    #         Takes an ion in a tuple format and returns it in string format.
-    #     """
-    #     os = int(ion[1])
-    #     return ion[0] + (str(abs(os)) if abs(os) > 1 else "") + ("+" if os > 0 else "-")
-            
-    def hasLonePair(self, element:str):
-
-        return element in self.LONE_PAIR_ELEMENTS
-            
 
 class Ion:
+    """
+        Class that represents an ion as an object.
+    """
 
-    ION_REGEX = re.compile("([A-Za-z]{,2})(\d*)(\+|-)")
-    LONE_PAIR_ELEMENTS = ["Pb", "Sn", "Bi", "Sb", "Tl"]
-    one_reducer = lambda x: "1" if x == "" else x
+    ION_REGEX = re.compile("([A-Za-z]{,2})(\d*)(\+|-)") # Regular expression for interpreting ions in string format
+    LONE_PAIR_ELEMENTS = ["Pb", "Sn", "Bi", "Sb", "Tl"] # Elements that are searched for lone pairs
+    one_reducer = lambda x: "1" if x == "" else x # Lambda function that removes the digit 1 from ions, e.g. Pb1+ -> Pb+
 
     def __init__(self, element:str, ox_state:int):
+        """
+            Initialises an ion class with the element and the oxidation state.
+        """
 
         if isinstance(element, str):
             self.element = element
@@ -60,9 +30,15 @@ class Ion:
         self.radius = None
 
     def __str__(self):
+        """
+            Returns the string representation of the ion.
+        """
         return self.string
     
     def __eq__(self, other):
+        """
+            Function to check whether the ion is equivalent to another ion, i.e. it is the same element and oxidation state
+        """
         if isinstance(other, Ion):
             return self.element == other.element and self.ox_state == other.ox_state
         elif isinstance(other, str):
@@ -76,6 +52,10 @@ class Ion:
 
     @classmethod
     def from_string(cls, ion_string:str):
+        """
+            Class method that allows creation of an ion object from the string representation.
+            The string should be in the format of element then oxidation state, e.g. Pb2+, F-, Li+, O2-
+        """
         result = cls.ION_REGEX.search(ion_string)
         
         if result is None:
@@ -84,17 +64,21 @@ class Ion:
             return Ion(element = result[1], ox_state = int(result[3] + cls.one_reducer(result[2])))
         
     def possible_lone_pair(self):
+        """
+            Checks whether the ion may have a lone pair
+        """
         return self.element in self.LONE_PAIR_ELEMENTS
 
-## DATABASE CLASS
+
 
 class BVDatabase:
     """
         A class representing a connection to a bond valence parameter database. Contains all methods required to communitate with the database.
     """
-
-    CORE = core()
-    BVParams = collections.namedtuple("BVParams", ['r0', 'b', 'ib', 'cn', 'r_cutoff', 'i1_radius', 'i2_radius', 'i1_softness', 'i2_softness', 'i1_period', 'i2_period','i1_block', 'i2_block'])
+    
+    DATABASE_DEFINITION = "database-define.sql"
+    # Tuple for storing bond valence parameters
+    bvparam = collections.namedtuple("BVParam", ['r0', 'ib', 'cn', 'r_cutoff', 'i1r', 'i2r', 'rmin', 'd0'])
 
     def __init__(self, dbLocation:str):
         """
@@ -152,30 +136,8 @@ class BVDatabase:
             Executes a SQL script to reset the database.
         """
 
-        self.cursor.executescript('''
-            CREATE TABLE Ion (
-                id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,
-                symbol VARCHAR(2),
-                atomic_no INT,
-                os INTEGER(1),
-                radii REAL,
-                softness REAL,
-                period INT,
-                p_group INT,
-                block INT                
-            );
-
-            CREATE TABLE BVParam (
-                id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,
-                ion1 INTEGER,
-                ion2 INTEGER,
-                r0 REAL,
-                b REAL,
-                ib REAL,
-                cn REAL,
-                r_cutoff REAL
-            );
-            ''')
+        with open(self.DATABASE_DEFINITION, "r") as script:
+            self.cursor.executescript(script.read())
         
     def reset_database(self):
         """
@@ -218,7 +180,7 @@ class BVDatabase:
 
     def create_entry(self, ion1:Ion, ion2:Ion, r0:float, b:float):
         """
-            Creates a database entry for a BV parameter set. Only basic information, included in Brown's cif files is set in this method.
+            Creates a database entry for a BV parameter set. Only basic information, included in Brown's files is set in this method. Returns the row id.
         """
 
         ion1Id = self.get_or_insert_ion(ion1)
@@ -246,17 +208,28 @@ class BVDatabase:
         self.execute("UPDATE Ion SET radii = ?, softness = ?, period = ?, p_group = ?, block = ?, atomic_no = ? WHERE id = ?", (radii, softness, period, group, block, atomicNo, ionId))
 
     def rmin(self, softness1:float, softness2:float, r0:float, b:float, osCation:int, cn:float):
+        """
+            Calculates expected value of the equilibrium bond distance R_min as defined by Chen et. al. 2019
+        """
         x = (0.9185 + 0.2285 * abs(softness1 - softness2))*r0
         y = b*np.log(abs(osCation)/cn)
         return x - y
     
     def d0(self, b:float, os1:int, os2:int, block1:int, rmin:float, period1:int, period2:int):
+        """
+            Calculates the bond breaking energy D_0 as defined by Chen et. al. 2019
+        """
+
+        # Factor that depends on whether the cation is a s/p/d/f-block element
         if block1 <= 1: c = 1
         else: c = 2 
 
         return ((b**2)/2 * 14.4 * (c*(abs(os1*os2))**(1/c)) / (rmin*np.sqrt(period1 * period2)))
     
     def _params_error_check(self, ion1:Ion, ion2:Ion):
+        """
+            Fetches the result of get_bv_params and checks the result is well formed
+        """
         result = self.fetch_all()
         if result is None or len(result) == 0:
             raise Exception(f"The combination of ions ({ion1}, {ion2}) are not on the BV Parameters Database")
@@ -266,17 +239,23 @@ class BVDatabase:
 
     def get_bv_params(self, ion1:Ion, ion2:Ion, bvse:bool = False):
         """
-            Finds the parameters for a combination of two ions and returns them. The input ions should be in the format of Symbol-OS Digit-Sign.
+            Finds the parameters for a combination of two ions and returns them.
 
-            Returns a tuple of (r0, ib)
+            Returns a bvparam named tuple, containing:
+            
+                'r0', 'ib', 'cn', 'r_cutoff', 'i1r', 'i2r', 'rmin', 'd0'
         """
         
+        # If the ions are bonding
         if (ion1.ox_state * ion2.ox_state) < 0:
+
+            # Retrieve all the information from the database
             #                    0   1  2   3   4         5         6         7            8            9          10         11        12
             self.execute("SELECT r0, b, ib, cn, r_cutoff, i1.radii, i2.radii, i1.softness, i2.softness, i1.period, i2.period, i1.block, i2.block FROM BVParam JOIN Ion i1 JOIN Ion i2 On BVParam.ion1 = i1.id AND BVParam.ion2 = i2.id WHERE (i1.symbol = ? AND i1.os = ? AND i2.symbol = ? AND i2.os = ?) OR (i2.symbol = ? AND i2.os = ? AND i1.symbol = ? AND i1.os = ?)", (ion1.element, ion1.ox_state, ion2.element, ion2.ox_state, ion1.element, ion1.ox_state, ion2.element, ion2.ox_state,))
             
             result = self._params_error_check(ion1, ion2)
 
+            # If BVSE is not being done, the returned parameters are simpler
             if bvse:
 
                 if ion1.ox_state > 0: 
@@ -286,13 +265,20 @@ class BVDatabase:
                     
                 rmin = self.rmin(result[7], result[8], result[0], result[1], cationOs, result[3])
                 d0 = self.d0(result[1], ion1.ox_state, ion2.ox_state, result[11], rmin, result[9], result[10])
-                return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], i1r = result[5], i2r = result[6], rmin = rmin, d0 = d0)
-            else:
-                return core.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], i1r = None, i2r = None, rmin = None, d0 = None)
+
+                return self.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], i1r = result[5], i2r = result[6], rmin = rmin, d0 = d0)
             
+            else:
+
+                return self.bvparam(r0 = result[0], ib = result[2], cn = result[3], r_cutoff = result[4], i1r = None, i2r = None, rmin = None, d0 = None)
+
+        # If BVSE and ions are repelling   
         elif bvse:
-            return core.bvparam(r0=None, ib=None, cn=None, r_cutoff=None, i1r=self.get_radius(ion1), i2r=self.get_radius(ion2), rmin=None, d0=None)
+
+            return self.bvparam(r0=None, ib=None, cn=None, r_cutoff=None, i1r=self.get_radius(ion1), i2r=self.get_radius(ion2), rmin=None, d0=None)
+        
         else:
+
             return None
 
         
@@ -301,7 +287,7 @@ class BVDatabase:
             Function to find the atomic number of a particular element, given the symbol.
         """
 
-        self.execute("SELECT atomic_no FROM Ion WHERE symbol = ?", (element,))
+        self.execute("SELECT atomic_no FROM Ion WHERE symbol = ? AND atomic_no IS NOT NULL", (element,))
         return self.fetch_one()
     
     def get_radius(self, ion:Ion):
@@ -320,6 +306,9 @@ class BVDatabase:
 
 
 def readCif(fileLocation:str|Path) -> cf.ReadCif:
+    """
+        Reads in a cif file from a Path object or a string of the path
+    """
     return cf.ReadCif(str(fileLocation)).first_block()
 
 def fileToDb(fileIn:str, fileOut:str):
@@ -341,6 +330,7 @@ def cifToDb(fileIn:str, fileOut:str):
     cif = readCif(fileIn)
     bvTable = cif.GetLoop("_valence_param_atom_1")
     db = BVDatabase(fileOut)
+    db.reset_database()
 
     for row in bvTable:
         db.create_entry(row[0], int(row[1]), row[2], int(row[3]), float(row[4]), float(row[5]))
@@ -356,10 +346,13 @@ def bvDatToDb(fileIn:str, fileOut:str):
     db.reset_database()
 
     with open(fileIn, "r") as data:
-        entries = data.readlines()
-        
+
         started = False
-        for entry in entries:
+
+        while True:
+
+            entry = data.readline()
+            
             if started and entry == "DATA_END\n":
                 break
             elif started:
@@ -381,10 +374,13 @@ def ionDatToDb(fileIn:str, fileOut:str):
     db = BVDatabase(fileOut)
     
     with open(fileIn, "r") as data:
-        entries = data.readlines()
+        
 
         started = False
-        for entry in entries:
+        while True:
+            
+            entry = data.readline()
+
             if started and entry == "DATA_END\n":
                 break
             elif started:
@@ -400,8 +396,10 @@ def ionDatToDb(fileIn:str, fileOut:str):
 
 
 def create_input_from_cif(fileIn:Path, fileOut:Path, conductor:str):
-    
-    CORE = core()
+    """
+        Converts a crystal structure stored in a cif into a input file for further processing. Requires the input cif,
+        the output file location and the conductor.
+    """
 
     # Create a pymatgen object
     struct = pmg.Structure.from_file(fileIn)
@@ -427,39 +425,60 @@ def create_input_from_cif(fileIn:Path, fileOut:Path, conductor:str):
         f.write("sym_label\tp1_label\telement\tos\tlp\ta\tb\tc\n")
         siteDict = {}
         osWarning = False
+        disorderWarning = False
 
-        # Highly inefficient, highly simple
+        # Create an entry in the dictionary to keep track of site multiplicity
         for site in struct.sites:
             siteDict[site.label] = 0
 
         # For every site, add label, element, os and cartesian coords
         for site in struct.sites:
+
+            # Write the normal label and then a new label for P1 symmetry
             f.write(f"{site.label}\t{site.label}.{siteDict[site.label]}\t")
             siteDict[site.label] += 1
+
             if isinstance(site.species, pmg.Composition):
                 
                 elements = site.species.elements
+
+                # If there are multiple elements on the site, throw warning.
                 if len(elements) != 1:
                     f.write("##DISORDERED SITE - AMEND MANUALLY##\t")
+                    disorderWarning = True
+                
+                # If only element for site defined, assume maximum oxidation state and throw warning.
                 elif isinstance(elements[0], pmg.Element):
-                    f.write(f"{elements[0].name}\t{elements[0].max_oxidation_state}\t{int(elements[0].name in CORE.LONE_PAIR_ELEMENTS)}\t")
+                    f.write(f"{elements[0].name}\t{elements[0].max_oxidation_state}\t{int(elements[0].name in Ion.LONE_PAIR_ELEMENTS)}\t")
                     osWarning = True
+
+                # If species is defined for site, work normally
                 elif isinstance(elements[0], pmg.Species):
-                    f.write(f"{elements[0].element}\t{elements[0].oxi_state}\t{int(elements[0].element.name in CORE.LONE_PAIR_ELEMENTS)}\t")
+                    f.write(f"{elements[0].element}\t{elements[0].oxi_state}\t{int(elements[0].element.name in Ion.LONE_PAIR_ELEMENTS)}\t")
+
+                # Otherwise something very unexpected has happened    
                 else:
                     raise Exception("Unexpected Site Contents")
             
+            # If the site is only defined as a species, deal with that
             elif isinstance(site.species, pmg.Species):
-                f.write(f"{site.species.symbol}\t{site.species.oxidation_state}\t{int(site.species.symbol in CORE.LONE_PAIR_ELEMENTS)}\t")
+                f.write(f"{site.species.symbol}\t{site.species.oxidation_state}\t{int(site.species.symbol in Ion.LONE_PAIR_ELEMENTS)}\t")
+
             else:
                 f.write("##DISORDERED SITE - AMEND MANUALLY##\t")
+                disorderWarning = True
             
             f.write(f"{site.coords[0]}\t{site.coords[1]}\t{site.coords[2]}\n")
 
         if osWarning:
             logging.warning("Oxidation States have been set to maximum (due to limitations with pymatgen). Amend input file with correct os")
 
+        if disorderWarning:
+            logging.warning(f"Strucutre has disordered sites - modification of ouput ({fileOut}) file is neeeded")
 
+
+
+# TESTING AREA
     
 # createInputFromCif("cif-files/1521543.cif", "files/na-abs.inp", "Na+")
 # createInputFromCif("cif-files/Binary Fluorides/ICSD_CollCode5270 (beta-PbF2).cif", "files/na-abs.inp", "F-")

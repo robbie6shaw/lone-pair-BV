@@ -1,9 +1,8 @@
-import math, logging, sys, os
+import math, logging, sys
 import numpy as np
 import pandas as pd
 from fileIO import *
 from pathlib import Path
-import scipy.special as ss
 from line_profiler import profile
 from numba import njit, float64
 from numba.core import types
@@ -18,8 +17,6 @@ class BVStructure:
     SCREENING_FACTOR = 0.75 # Factor for the ERFC
     LONE_PAIR_RADIUS = 1
     LONE_PAIR_CHARGE = -2
-
-    CORE = core()
 
     # --TESTED--
     def __init__(self, inputStr:str, name:str, bvse:bool=False):
@@ -52,16 +49,21 @@ class BVStructure:
         # Setup the sites dataframe
         self.sites = pd.DataFrame(columns=["label","ion","ox_state","lp","coords"])
     
-        # Fill the sites dataframe
-        for i in range(7, len(lines)):
-            data = lines[i].split("\t")
-            self.sites.loc[data[1]] = [data[0], Ion(data[2], round(float(data[3]))), round(float(data[3])), bool(int(data[4])), np.array((float(data[5]), float(data[6]), float(data[7])))]
+        # Fill the sites dataframe. If there is a value error, throw exception
+        try:
+
+            for i in range(7, len(lines)):
+                data = lines[i].split("\t")
+                self.sites.loc[data[1]] = [data[0], Ion(data[2], round(float(data[3]))), round(float(data[3])), bool(int(data[4])), np.array((float(data[5]), float(data[6]), float(data[7])))]
+            
+        except ValueError:
+            raise Exception("Value Error When Interpreting Input File - Are there disordered sites?")
 
         logging.debug(self.sites)
 
         # Get the needed bond valence parameters from the database
         self.db = BVDatabase(self.DB_LOCATION)
-        self.bvParams = self.get_param_dict(self.conductor, bvse)
+        self.bvParams = self.create_param_dict(self.conductor, bvse)
 
         # Find the effective charges of ions in the structure
         self.chargeList = self.find_effective_charges()
@@ -100,8 +102,8 @@ class BVStructure:
         """
         if not isinstance(shift, np.ndarray):
             shift = np.array(shift)
+
         return coord + np.matmul(shift, self.vectors)
-        # return coord + self.vectors[0]*shift[0] + self.vectors[1]*shift[1] + self.vectors[2]*shift[2]
     
     # --TESTED--
     def _frac_from_cart(self, cartesian:np.ndarray):
@@ -125,7 +127,7 @@ class BVStructure:
         return (start <= point).all() and (point <= end).all()
     
     # --TESTED--
-    def get_param_dict(self, conductor:Ion, bvse = False):
+    def create_param_dict(self, conductor:Ion, bvse = False):
         """
             Method that fetches bond valence parameters for all species in the structure and the specified ion. This method populates the bvParams dictionary and sets a cutoff radius using the values stored in the database.
         """
@@ -134,13 +136,16 @@ class BVStructure:
         maxCutoff = 0
 
         # For every ion that is not the conductor (currently assuming only one)
+        # Drops additional ions after the first one
         for ion in self.sites.drop_duplicates(subset=["label"])["ion"]:
 
             if ion == conductor:
                 continue
 
+            # Define the dictionary key
             dictKey = f"{conductor}.{ion}"
 
+            # Check if parameters are already fetched
             if dictKey in bvParams:
                 continue
 
@@ -148,15 +153,20 @@ class BVStructure:
                 params = self.db.get_bv_params(conductor, ion, bvse=bvse)
                 if params is None:
                     continue
+
+                # If the cut off needs to be greater than whats currently set, change it
                 elif params.r_cutoff is not None:
                     maxCutoff = max(maxCutoff, params.r_cutoff)
 
-                bvParams[f"{conductor}.{ion}"] = params
+                bvParams[dictKey] = params
 
         self.rCutoff = maxCutoff
         return bvParams
 
     def get_bv_param(self, ion1:Ion, ion2:Ion):
+        """
+            Accesses the bv parameter dictionary and retrieves a bvparam tuple. Requires two ion objects, can accept ions in either order. 
+        """
         try:
             return self.bvParams[f"{ion1}.{ion2}"]
         except KeyError:
@@ -167,12 +177,14 @@ class BVStructure:
                 return self.bvParams[f"{ion1}.{ion2}"]
         
     def conductor_bv_param(self, ion:Ion):
+        """
+            Accesses the bv parameter dictionary and retrieves a bvparam tuple. Only one ion needs to be specified, the other is the conducting ion.
+        """
         return self.get_bv_param(self.conductor, ion)
 
     def define_buffer_area(self):
         """
-            Defines all the attributes of the buffer area, to get the program ready for creating the list of sites in the buffer region.
-            Only intended to be used within the initaliseMap() method. 
+            Defines all the attributes of the buffer area, to get the program ready for creating the list of sites in the buffer region. 
         """
 
         # The default starting point for the buffer area is a 3x3x3 supercell.
@@ -184,7 +196,7 @@ class BVStructure:
                 self.bufferArea[i] += 2
 
         # Find the cartesian coordinates of the 'core' cell - the one that map will be based on
-        # To do this, it find the core cell coordinates in terms of cells and then multiplies the cell vectors
+        # To do this, it finds the core cell coordinates in terms of cells and then multiplies the cell vectors
         self.findCoreCell = np.vectorize(lambda x: math.floor(x/2))
         # self.coreCartesian = np.sum(self.findCoreCell(self.bufferArea) * self.vectors, axis=0)
 
@@ -290,13 +302,15 @@ class BVStructure:
 
     def populate_map_bvsm(self, penalty:float = 0, fType:str = "linear", only_penalty:bool = False):
         """
-            Function that populates the map with the bond valence mismatch values. A penalty function can be enabled with the parameter of `penalty`. If the value is 0, no penalty is added; otherwise this is the constant of proportionaltity is used in the penalty function. Recommended values are around 0.1.
+            --- USE JIT FUNCTION IN PREFERENCE ---
+
+            Function that populates the map with the bond valence sum mismatch values. A penalty function can be enabled with the parameter of `penalty`. If the value is 0, no penalty is added; otherwise this is the constant of proportionaltity is used in the penalty function. Recommended values are around 0.1.
         """
 
         if fType in ["linear", "lin", "l", "1"]:
-            penF = self._linear_penalty
+            penFunc = self._linear_penalty
         elif fType in ["quadratic", "quad", "q", "2"]:
-            penF = self._quadratic_penalty
+            penFunc = self._quadratic_penalty
 
         # Removes all conducting ions from the structure
         selectedAtoms = self.bufferedSites[self.bufferedSites["ion"] != self.conductor]
@@ -319,7 +333,6 @@ class BVStructure:
                         # Calculate the point to point distance between the voxel position and the atom position
                         ri = self.calc_distance(pos, ionSite["coords"])
 
-
                         # If the seperation is greater than the cutoff radius, the bv contribution is 0.
                         if ri > self.rCutoff:
                             continue
@@ -337,7 +350,7 @@ class BVStructure:
                                     bvSum += calc_bv(bvParam.r0, ri, bvParam.ib)
 
                         elif penalty != 0 :
-                            penaltySum += penF(-2, ri, penalty)
+                            penaltySum += penFunc(-2, ri, penalty)
 
                     # Update the map
                     if only_penalty:
@@ -350,7 +363,8 @@ class BVStructure:
     @profile
     def populate_map_bvse(self, mode = 1):
         """
-            --- DEPRECATED ---
+            --- USE JIT FUNCTION IN PREFERENCE ---
+
             Populates the map with BVSE data. Mode Settings:
                 0 - Only Bonding Energy
                 1 - Bonding + Coulombic Energy
@@ -407,22 +421,16 @@ class BVStructure:
                                 params = self.bvParams[self.conductor_bv_param(ionSite["ion"])]
                                 Ecoul += calc_Ecoul(self.conductor.ox_state, ionSite["ion"].ox_state, ri, params.i1r, params.i2r, self.SCREENING_FACTOR) 
 
-                        # elif penalty != 0 :
-                        #     penaltySum += penF(-2, ri, penalty)
 
                     self.map[h][k][l] = Ebond + Ecoul
-                    # Update the map
-                    # if only_penalty:
-                    #     self.map[h][k][l] = penaltySum
-                    # else:
-                    #     self.map[h][k][l] = abs(Ebond - abs(self.conductor)) + penaltySum
 
             logging.info(f"Completed plane {h} out of {self.voxelNumbers[0] - 1}")
 
     @profile
     def populate_map_bvsm_jit(self, mode = 1, penalty:float = 0.05):
         """
-            Populates the map with BVSE data. Mode Settings:
+            Populates the map with bond valence sum mismatch data. Optimised with numba. Mode Settings:
+
                 0 - Normal BVSM
                 1 - BVSM + Penalty
                 2 - Only Penalty Function
@@ -431,15 +439,28 @@ class BVStructure:
         # Removes all conducting ions from the structure
         selectedSites = self.bufferedSites[self.bufferedSites["ion"] != self.conductor]
 
+        # Create arrays of all ions with all necessary information -> removing the need for class methods etc.
         bvIons = self._create_bv_array(selectedSites)
         penIons = self._create_bv_penalty_array(selectedSites, penalty)
 
+        # Do the calculation
         self.map = bvsm_map(self.voxelNumbers, self.vectors, self.rCutoff, self.conductor.ox_state, mode, bvIons, penIons, self.map)
         logging.info(f"Succesful map creation for {self.name}")
 
     def _create_bv_array(self, selectedSites):
+        """
+            Method to setup an array containing all necessary information for a bond valence sum calculation. The array has the following format:
+
+                [i][0-2] - Site Coordinates \n
+                [i][3] - Inverse b parameter \n
+                [i][4] - r0 parameter \n
+        """
+
+        # Select the sites that of oppisite charge to the conducting ion
         selectedSites = selectedSites[(selectedSites["ox_state"] * self.conductor.ox_state) < 0]
         outList = []
+
+        # Iterate through these sites to fill the list
         for i, site in selectedSites.iterrows():
             siteInfo = np.zeros(5)
             siteInfo[0:3] = site["coords"].copy()
@@ -447,12 +468,23 @@ class BVStructure:
             siteInfo[3] = params.ib
             siteInfo[4] = params.r0
             outList.append(siteInfo)
+
+        # Convert from list to numpy array. If the list is empty, ensure the right shape is retained.
         out = np.array(outList)
         if out.shape[0] == 0:
             out = np.array([[]])
+
         return out
     
     def _create_bv_penalty_array(self, selectedSites, penalty):
+        """
+            Method to setup an array containing all necessary information for the penalty function for BVSM. The array has the following format:
+
+                [i][0-2] - Site Coordinates \n
+                [i][3] - Lone Pair Charge \n
+                [i][4] - Penalty  \n
+        """
+
         selectedSites = selectedSites[(selectedSites["ox_state"] * self.conductor.ox_state) > 0]
         outList = []
         for i, site in selectedSites.iterrows():
@@ -485,6 +517,15 @@ class BVStructure:
         logging.info(f"Succesful map creation for {self.name}")
 
     def _create_bond_site_array(self, selectedSites):
+        """
+            Creates an array of any site that will be used for bonding energy calculations. Resulting array
+            has the following structure:
+            
+                [i][0-2] = site coordinates \n
+                [i][3] = d0 bv parameter \n
+                [i][4] = rmin bv parameter \n
+                [i][5] = b^-1 bv parameter \n
+        """
         selectedSites = selectedSites[(selectedSites["ox_state"] * self.conductor.ox_state) < 0]
         outList = []
         for i, site in selectedSites.iterrows():
@@ -501,9 +542,23 @@ class BVStructure:
         return out
     
     def _create_coul_site_array(self, selectedSites, effectiveCharge):
+        """
+            Creates an array of any site that will be used for a Coulombic repulsion calculation. Resulting array
+            has the following structure:
+
+                [i][0-2] = site coordinate \n
+                [i][3] = conducting ion charge \n
+                [i][4] = fixed ion charge \n
+                [i][5-6] = ionic radii \n
+        """
+
+        # Select sites that have the same oxidation state sign
         selectedSites = selectedSites[(selectedSites["ox_state"] * self.conductor.ox_state) > 0]
         conductorRadius = self.db.get_radius(self.conductor)
         outList = []
+
+        # For every site, populate the array with the necessary information
+        # Slightly different technique for when dealing with lone pairs
         for i, site in selectedSites.iterrows():
             siteInfo = np.zeros(7)
             siteInfo[0:3] = site["coords"].copy()
@@ -526,6 +581,8 @@ class BVStructure:
                 siteInfo[5] = conductorRadius
                 siteInfo[6] = self.LONE_PAIR_RADIUS
             outList.append(siteInfo)
+
+        # Convert from list to numpy array. If the list is empty, ensure the right shape is retained.
         out = np.array(outList)
         if out.shape[0] == 0:
             out = np.array([[]])
@@ -824,7 +881,7 @@ def voxel_bvse(voxelId:np.ndarray, voxelNos:np.ndarray, vectors:np.ndarray, cuto
             else:
                 Ebond += calc_Ebond(d0=ion[3], rmin=ion[4], ri=r, ib=ion[5])
 
-    if mode > 0:
+    if mode > 0 and coulIons.size > 0:
         for i in range(coulIons.shape[0]):
 
             ion = coulIons[i]
@@ -856,7 +913,7 @@ def voxel_bvsm(voxelId:np.ndarray, voxelNos:np.ndarray, vectors:np.ndarray, cuto
         peformance improvements. Arguments: \n
         voxelId - A 3 element numpy array indicating the voxel position in angstroms. \n
         voxelNos - A 3 element numpy array indicating the number of voxels in the structure \n
-        vectors - A 3 element numpy array of the lattice vectors
+        vectors - A 3 element numpy array of the lattice vectors \n
         cutoff - The radius cutoff for the energy function. \n
         conductorOS - The oxidation state of the conducting ion \n
         mode - An integer indicating what parts of the BVSE calculation to complete. \n

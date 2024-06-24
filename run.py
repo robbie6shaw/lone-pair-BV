@@ -115,7 +115,7 @@ def bulk_bvse(parser:ArgumentParser, overrideArgs:list = None):
     cifPath = basePath.joinpath("cif")
 
     if not cifPath.is_dir():
-        logging.error("The folder specified does not contain a folder called 'cifs'")
+        logging.error("The folder specified does not contain a folder called 'cif'")
         sys.exit()
 
     else:
@@ -143,7 +143,7 @@ def bulk_bvse(parser:ArgumentParser, overrideArgs:list = None):
 
                 create_input_from_cif(cifFile, inpFile, args.conductor)
 
-                _bvse(input_file=inpFile, output_file=cubeFile, resolution=args.resolution, mode=1, effective_charge=args.effective_charge)
+                _bvse(input_file=inpFile, output_file=cubeFile, resolution=args.resolution, mode=1, effective_charge=args.effective_charge, no_jit=False)
             
             except Exception as e:
                 logging.error(f"The following {type(e)} exception was raised when processing the structure {formula}. The following traceback was produced:")
@@ -153,6 +153,7 @@ def bulk_bvse(parser:ArgumentParser, overrideArgs:list = None):
 def render(parser:ArgumentParser, overrideArgs:list = None):
 
     parser.add_argument("input_file")
+    parser.add_argument("output_file")
     parser.add_argument("-l","--lp","--lone_pair", action='store_true', help='Toggles whether lone pairs are rendered in the cif file by adding dummy helium sites')
     args = parser.parse_args(overrideArgs)
 
@@ -162,7 +163,7 @@ def render(parser:ArgumentParser, overrideArgs:list = None):
     if args.lp:
         structure.create_lone_pairs()
     logging.debug(structure.bufferedSites)
-    structure.export_cif(args[1])
+    structure.export_cif(args.output_file)
 
 
 def data_import(parser:ArgumentParser, overrideArgs:list = None):
@@ -203,9 +204,11 @@ if __name__ == '__main__' and len(sys.argv) > 1:
     )
 
     print(sys.argv)
-    globals()[sys.argv[1]](parser)
-
-    logging.info(f"Program Complete - Time Taken: {(datetime.now() - start_time)}")
+    try:
+        globals()[sys.argv[1]](parser)
+        logging.info(f"Program Complete - Time Taken: {(datetime.now() - start_time)}")
+    except KeyError:
+        print("Invalid Function Entered. Possible options: create_input, bvsm, bvse, site_bvs, bulk_bvse, render, data_import, buffer_export")
 
 else:
 
@@ -216,11 +219,11 @@ else:
 
     parser = ArgumentParser()
 
-    #analyse(["cif-files/bulk-bvsm/PbSnF4-0.08l.grd", 0.1])  
     # bvs(["files/pbsnf4.inp", "files/temp.grd", 1])
     # bvse_jit(['results/PbSnF4/PbSnF4.inp', 'results/PbSnF4/PbSnF4-test.cube', '1', '1'])
     # render(['results/Sn-II-database/result/Sn3BrF5/Sn3BrF5.inp', 'results/Sn-II-database/result/Sn3BrF5/Sn3BrF5-lp.cif','lp'])
     # create_input(["cif-files/ternary-fluorides/EntryWithCollCode152949 (PbSnF4).cif", "files/pbsnf4.inp", "F-"])
     # new_bulk(["/home/rs/bv-project/results/Sn-II-database", "F-", 0.1])
-    # bvse(parser, ['results/Sn-II-database/result/Sn3F5BF4/Sn3F5BF4.inp', 'results/Sn-II-database/result/Sn3F5BF4/Sn3F5BF4-test.cube'])
-    bvsm(parser, ['results/PbSnF4/PbSnF4.inp', 'results/PbSnF4/refactor-test/bvsm-nopen-5-njit.cube', "-r0.5", "-m0"])
+    # bvse(parser, ['results/Pb-II-database/result/PbPdF4/PbPdF4.inp', 'results/Pb-II-database/result/PbPdF4/PbPdF4.cube'])
+    bvse(parser, ['results/PbSnF4/PbSnF4.inp', 'results/PbSnF4/refactor-test/bvse06.cube'])
+    #site_bvs(parser, ['results/PbF2-beta/PbF2.inp'])

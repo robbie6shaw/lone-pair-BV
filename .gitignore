@@ -9,3 +9,5 @@ logs/*
 files/*
 *.pyc
 *.sqlite3-journal
+cif-files
+results

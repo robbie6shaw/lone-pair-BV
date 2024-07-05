@@ -1,8 +1,8 @@
-# bv-project
+# lone-pair-BV
 
 ## Running The Software
 
-To utilise bv-project, it is run using python on the command line. Once in the 'bv-project' directory, `run.py` can run the following commands:
+To utilise lone-pair-BV, it is run using python on the command line. Once in the 'bv-project' directory, `run.py` can run the following commands:
 
 ### create_input
 The create input command is used to take a cif file and create a human readable + editable input file for creating a bond valence map. It accepts three arguments:

@@ -1,7 +1,7 @@
 import logging, sys
 from argparse import ArgumentParser
 from datetime import datetime
-from calculate import *
+from bvStructure import *
 from fileIO import *
 from pathlib import Path
 from shutil import copy2
@@ -225,5 +225,5 @@ else:
     # create_input(["cif-files/ternary-fluorides/EntryWithCollCode152949 (PbSnF4).cif", "files/pbsnf4.inp", "F-"])
     # new_bulk(["/home/rs/bv-project/results/Sn-II-database", "F-", 0.1])
     # bvse(parser, ['results/Pb-II-database/result/PbPdF4/PbPdF4.inp', 'results/Pb-II-database/result/PbPdF4/PbPdF4.cube'])
-    bvse(parser, ['results/PbSnF4/PbSnF4.inp', 'results/PbSnF4/refactor-test/bvse06.cube'])
+    #bvse(parser, ['results/PbSnF4/PbSnF4.inp', 'results/PbSnF4/refactor-test/bvse06.cube'])
     #site_bvs(parser, ['results/PbF2-beta/PbF2.inp'])

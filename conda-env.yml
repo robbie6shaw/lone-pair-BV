@@ -1,0 +1,13 @@
+name: lone-pair-BV
+channels:
+  - intel
+  - conda-forge
+  - defaults
+dependencies:
+  - pymatgen
+  - numba
+  - ca-certificates
+  - certifi
+  - openssl
+  - pycifrw
+prefix: /home/rs/miniconda3/envs/lone-pair-BV

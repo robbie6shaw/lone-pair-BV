@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 from fileIO import *
 from pathlib import Path
-from line_profiler import profile
 from numba import njit, float64
 from numba.core import types
 from numba.typed import Dict
@@ -360,7 +359,6 @@ class BVStructure:
 
             logging.info(f"Completed plane {h} out of {self.voxelNumbers[0] - 1}")
 
-    @profile
     def populate_map_bvse(self, mode = 1):
         """
             --- USE JIT FUNCTION IN PREFERENCE ---
@@ -426,7 +424,6 @@ class BVStructure:
 
             logging.info(f"Completed plane {h} out of {self.voxelNumbers[0] - 1}")
 
-    @profile
     def populate_map_bvsm_jit(self, mode = 1, penalty:float = 0.05):
         """
             Populates the map with bond valence sum mismatch data. Optimised with numba. Mode Settings:
@@ -498,7 +495,6 @@ class BVStructure:
             out = np.array([[]])
         return out
 
-    @profile
     def populate_map_bvse_jit(self, mode = 1, effectiveCharge = True):
         """
             Populates the map with BVSE data. Mode Settings:

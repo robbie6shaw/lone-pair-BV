@@ -186,9 +186,13 @@ def buffer_export(parser:ArgumentParser, overrideArgs:list = None):
 
 # Code Allows Command Line Running of Functions https://stackoverflow.com/a/52837375
 if __name__ == '__main__' and len(sys.argv) > 1:
+
+    logPath = _create_dir(Path.cwd(), "logs")
+    
     logging.basicConfig(level=logging.INFO, format='%(asctime)s -  %(levelname)s -  %(message)s', handlers=[
         # logging.FileHandler(f"./logs/{datetime.now().isoformat(timespec='seconds')}.log"),
-        logging.FileHandler("logs/bvs.log"),
+
+        logging.FileHandler(logPath.joinpath("lone-pair-BV.log")),
         logging.StreamHandler()
     ])
 

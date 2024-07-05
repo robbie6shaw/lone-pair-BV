@@ -11,7 +11,7 @@ class Ion:
         Class that represents an ion as an object.
     """
 
-    ION_REGEX = re.compile("([A-Za-z]{,2})(\d*)(\+|-)") # Regular expression for interpreting ions in string format
+    ION_REGEX = re.compile(r"([A-Za-z]{,2})(\d*)(\+|-)") # Regular expression for interpreting ions in string format
     LONE_PAIR_ELEMENTS = ["Pb", "Sn", "Bi", "Sb", "Tl"] # Elements that are searched for lone pairs
     one_reducer = lambda x: "1" if x == "" else x # Lambda function that removes the digit 1 from ions, e.g. Pb1+ -> Pb+
 
